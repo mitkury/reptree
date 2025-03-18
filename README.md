@@ -2,6 +2,10 @@
 
 A tree data structure using CRDTs for seamless replication between peers.
 
+> 🚧 **Work in Progress**: This package is under active development and APIs may change.
+>
+> RepTree was created for the [Supa](https://github.com/supaorg/supa) project, an open-source alternative to ChatGPT.
+
 ## Description
 
 RepTree is a tree data structure for storing vertices with properties.
@@ -13,10 +17,6 @@ It uses 2 conflict-free replicated data types (CRDTs) to manage seamless replica
 
 ```bash
 npm install reptree
-# or
-yarn add reptree
-# or
-pnpm add reptree
 ```
 
 ## Usage
