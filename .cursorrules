@@ -1,0 +1,35 @@
+This is a context for AI editor/agent about the project. It's generated with a tool Airul (https://airul.dev) out of 2 sources. Feel free to edit .airul.json to change the sources and configure editors. Run `airul gen` to update the context after making changes to .airul.json or the sources.
+
+# From README.md:
+
+/**
+ * ReplicatedTree is a tree data structure for storing vertices with properties.
+ * It uses 2 conflict-free replicated data types (CRDTs) to manage seamless replication between peers.
+ * A move tree CRDT is used for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
+ * A last writer wins (LWW) CRDT is used for properties.
+ */
+---
+
+# From TODO-AI.md:
+
+# AI Workspace
+
+## Active Task
+Create an npm package for ReplicatedTree. I've separated it from the main project to make it into a self-contained package on npm. I want it to be compiled into a dist using tsup
+
+## Status
+⏳ In Progress
+
+## Context & Progress
+- Created: 2025-03-18
+- I (AI) will maintain this document as we work together
+- My current focus: Understanding and working on the active task
+
+## Task History
+- Initial task: Create an npm package for ReplicatedTree. I've separated it from the main project to make it into a self-contained package on npm. I want it to be compiled into a dist using tsup
+
+## Notes
+- I'll update this file to track our progress and maintain context
+- I'll keep sections concise but informative
+- I'll update status and add key decisions/changes
+- I'll add new tasks as they come up

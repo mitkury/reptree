@@ -1,0 +1,50 @@
+{
+  "name": "reptree",
+  "version": "0.1.0",
+  "description": "A tree data structure using CRDTs for seamless replication between peers",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "npm run test:dist",
+    "test:src": "node --loader ts-node/esm tests/test-runner.ts",
+    "test:dist": "npm run build && node --loader ts-node/esm tests/test-runner.ts",
+    "example": "npm run build && node --loader ts-node/esm examples/basic-usage.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "crdt",
+    "tree",
+    "data-structure",
+    "replication"
+  ],
+  "author": "Dmitry Kury (d@dkury.com)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mitkury/reptree.git"
+  },
+  "homepage": "https://github.com/mitkury/reptree#readme",
+  "bugs": {
+    "url": "https://github.com/mitkury/reptree/issues"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.1",
+    "tsup": "^8.0.1",
+    "typescript": "^5.2.2"
+  }
+} 
