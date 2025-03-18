@@ -2,12 +2,58 @@ This is a context for AI editor/agent about the project. It's generated with a t
 
 # From README.md:
 
-/**
- * ReplicatedTree is a tree data structure for storing vertices with properties.
- * It uses 2 conflict-free replicated data types (CRDTs) to manage seamless replication between peers.
- * A move tree CRDT is used for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
- * A last writer wins (LWW) CRDT is used for properties.
- */
+# RepTree
+
+A tree data structure using CRDTs for seamless replication between peers.
+
+> 🚧 **Work in Progress**: This package is under active development and APIs may change.
+>
+> RepTree was created for the [Supa](https://github.com/supaorg/supa) project, an open-source alternative to ChatGPT.
+
+## Description
+
+RepTree is a tree data structure for storing vertices with properties.
+It uses 2 conflict-free replicated data types (CRDTs) to manage seamless replication between peers:
+- A move tree CRDT is used for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
+- A last writer wins (LWW) CRDT is used for properties.
+
+## Installation
+
+```bash
+npm install reptree
+```
+
+## Usage
+
+```typescript
+import { RepTree } from 'reptree';
+
+// Create a new tree
+const tree = new RepTree('peer1');
+
+// Root vertex is created automatically
+const rootVertex = tree.rootVertex;
+const rootId = rootVertex.id;
+
+// Add child vertices
+const childVertex = tree.newVertex(rootId);
+const childId = childVertex.id;
+
+// Set properties
+tree.setVertexProperty(childId, 'name', 'Child Node');
+
+// Move vertices
+tree.moveVertex(childId, anotherParentId);
+
+// Syncing between trees
+const otherTree = new RepTree('peer2');
+const ops = tree.getAllOps();
+otherTree.merge(ops);
+```
+
+## License
+
+MIT
 ---
 
 # From TODO-AI.md:
@@ -15,21 +61,31 @@ This is a context for AI editor/agent about the project. It's generated with a t
 # AI Workspace
 
 ## Active Task
-Create an npm package for ReplicatedTree. I've separated it from the main project to make it into a self-contained package on npm. I want it to be compiled into a dist using tsup
+✅ Create an npm package for RepTree. I've separated it from the main project to make it into a self-contained package on npm. I want it to be compiled into a dist using tsup
 
 ## Status
-⏳ In Progress
+✅ Completed
 
 ## Context & Progress
 - Created: 2025-03-18
+- Completed: 2025-03-18
 - I (AI) will maintain this document as we work together
-- My current focus: Understanding and working on the active task
+- My current focus: Task completed successfully
 
 ## Task History
-- Initial task: Create an npm package for ReplicatedTree. I've separated it from the main project to make it into a self-contained package on npm. I want it to be compiled into a dist using tsup
+- Initial task: Create an npm package for RepTree. I've separated it from the main project to make it into a self-contained package on npm. I want it to be compiled into a dist using tsup
+- Tasks completed:
+  - Created package.json with proper configuration
+  - Set up tsup for building the package
+  - Created TypeScript configuration
+  - Fixed type errors for successful build
+  - Added basic examples and tests
+  - Successfully built the package
+  - Renamed package to reptree and main class to RepTree
 
 ## Notes
-- I'll update this file to track our progress and maintain context
-- I'll keep sections concise but informative
-- I'll update status and add key decisions/changes
-- I'll add new tasks as they come up
+- RepTree npm package has been successfully created
+- The package uses tsup for building to multiple formats (CommonJS, ESM)
+- Added proper TypeScript type definitions
+- Package includes tests and examples
+- Ready for publishing to npm (can be done with `npm publish`)
