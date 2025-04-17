@@ -20,7 +20,7 @@ type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
  * A last writer wins (LWW) CRDT is used for properties.
  */
 export class RepTree {
-  private static TRASH_VERTEX_ID = 't';
+  private static VOID_VERTEX_ID = 'v';
   private static DEFAULT_MAX_DEPTH = 100000;
 
   readonly peerId: string;
@@ -66,14 +66,14 @@ export class RepTree {
       this.applyOps(ops);
 
       // @TODO: perhaps don't do it here. Handle it in validation.
-      this.ensureTrashVertex();
+      this.ensureVoidVertex();
 
       // @TODO: validate the tree structure, throw an exception if it's invalid
     } else {
       // The root is our only vertex that will have a null parentId
       this.rootVertexId = this.newVertexInternalWithUUID(null);
 
-      this.ensureTrashVertex();
+      this.ensureVoidVertex();
     }
   }
 
@@ -199,7 +199,7 @@ export class RepTree {
   }
 
   deleteVertex(vertexId: string) {
-    this.moveVertex(vertexId, RepTree.TRASH_VERTEX_ID);
+    this.moveVertex(vertexId, RepTree.VOID_VERTEX_ID);
   }
 
   setTransientVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
@@ -417,10 +417,10 @@ export class RepTree {
     return this.newVertexInternal(vertexId, parentId);
   }
 
-  private ensureTrashVertex() {
-    const vertexId = RepTree.TRASH_VERTEX_ID;
+  private ensureVoidVertex() {
+    const vertexId = RepTree.VOID_VERTEX_ID;
 
-    // Check if the trash vertex already exists
+    // Check if the void vertex already exists
     if (this.state.getVertex(vertexId)) {
       return;
     }
