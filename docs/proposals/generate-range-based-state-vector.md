@@ -152,20 +152,103 @@ The synchronization process now becomes more efficient:
  * @returns Operations that should be sent to the other peer
  */
 getMissingOps(theirStateVector: Record<string, number[][]>): VertexOperation[] {
+  // First, identify the missing operation ranges by comparing state vectors
+  const missingRanges = this.diffStateVectors(theirStateVector);
+  
+  // Then, retrieve only the operations that fall within those ranges
   const missingOps: VertexOperation[] = [];
   const allOps = this.getAllOps();
   
+  // Only check operations that might be in the missing ranges
   for (const op of allOps) {
-    const peerId = op.id.peerId;
-    const counter = op.id.counter;
-    
-    // Check if this operation is missing from their state vector
-    if (!isCounterInRanges(counter, theirStateVector[peerId] || [])) {
-      missingOps.push(op);
+    for (const range of missingRanges) {
+      if (op.id.peerId === range.peerId && 
+          op.id.counter >= range.start && 
+          op.id.counter <= range.end) {
+        missingOps.push(op);
+        break;
+      }
     }
   }
   
   return missingOps;
+}
+
+/**
+ * Calculates which operation ranges we have that the other peer is missing
+ * by comparing state vectors.
+ * 
+ * @param theirStateVector The state vector from another peer
+ * @returns Array of operation ID ranges that we have but they don't
+ */
+private diffStateVectors(theirStateVector: Record<string, number[][]>): OpIdRange[] {
+  const missingRanges: OpIdRange[] = [];
+  
+  // Check what we have that they don't have
+  for (const [peerId, ourRanges] of Object.entries(this.stateVector)) {
+    const theirRanges = theirStateVector[peerId] || [];
+    
+    // Calculate ranges we have that they don't
+    const missing = subtractRanges(ourRanges, theirRanges);
+    
+    // Convert to OpIdRange format
+    for (const [start, end] of missing) {
+      missingRanges.push({
+        peerId,
+        start,
+        end
+      });
+    }
+  }
+  
+  return missingRanges;
+}
+
+/**
+ * Helper function to subtract one set of ranges from another
+ * Returns the ranges in A that are not in B
+ */
+function subtractRanges(rangesA: number[][], rangesB: number[][]): number[][] {
+  if (rangesB.length === 0) return [...rangesA]; // If B is empty, return all of A
+  if (rangesA.length === 0) return []; // If A is empty, nothing to subtract
+  
+  const result: number[][] = [];
+  let indexB = 0;
+  
+  for (const [startA, endA] of rangesA) {
+    let currentStart = startA;
+    
+    while (indexB < rangesB.length && rangesB[indexB][0] <= endA) {
+      // If there's a gap before this range in B
+      if (currentStart < rangesB[indexB][0]) {
+        result.push([currentStart, rangesB[indexB][0] - 1]);
+      }
+      
+      // Move current start past this range in B
+      currentStart = Math.max(currentStart, rangesB[indexB][1] + 1);
+      
+      // If we've gone past the end of this range in A, break
+      if (currentStart > endA) break;
+      
+      indexB++;
+    }
+    
+    // If there's a remaining gap
+    if (currentStart <= endA) {
+      result.push([currentStart, endA]);
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Type definition for operation ID range
+ */
+interface OpIdRange {
+  peerId: string;
+  start: number;
+  end: number;
 }
 
 /**
@@ -188,7 +271,7 @@ To implement this in RepTree, we would:
 1. Add the `stateVector` field to the RepTree class
 2. Add the `updateStateVector` method to maintain the state vector incrementally 
 3. Add the `getStateVector` method to access the current state vector
-4. Add `getMissingOps` method to identify operations to send
+4. Add `diffStateVectors` and `getMissingOps` methods to efficiently identify operations to send
 5. Update the `reportOpAsApplied` method to call `updateStateVector`
 
 ### Example Usage
@@ -220,11 +303,12 @@ treeA.merge(missingOpsForA);
 ## Benefits
 
 1. **Efficient Synchronization**: Only missing operations are transferred
-2. **Resilient to Network Partitions**: Peers can handle non-contiguous operation histories
-3. **Compact Representation**: State vectors are much smaller than sending all operations
-4. **Natural CRDT Integration**: Works with RepTree's existing operation-based CRDT model
-5. **Incremental Maintenance**: State vector is maintained as operations are applied, avoiding costly recalculations
-6. **Supports Offline Work**: Peers can generate operations locally and reconcile later
+2. **Optimized Comparison**: State vector diff efficiently identifies missing operations
+3. **Resilient to Network Partitions**: Peers can handle non-contiguous operation histories
+4. **Compact Representation**: State vectors are much smaller than sending all operations
+5. **Natural CRDT Integration**: Works with RepTree's existing operation-based CRDT model
+6. **Incremental Maintenance**: State vector is maintained as operations are applied, avoiding costly recalculations
+7. **Supports Offline Work**: Peers can generate operations locally and reconcile later
 
 ## Next Steps
 
@@ -232,4 +316,4 @@ treeA.merge(missingOpsForA);
 2. Add unit tests to verify the behavior with various scenarios
 3. Create integration tests for multi-peer synchronization
 4. Benchmark synchronization efficiency compared to sending all operations
-5. Document the public API for developers 
+5. Document the public API for developers
