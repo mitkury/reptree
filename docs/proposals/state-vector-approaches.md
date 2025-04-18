@@ -8,13 +8,13 @@ State vectors are critical for efficient synchronization in distributed systems.
 
 ## Proposed Range-Based State Vector
 
-A range-based state vector tracks contiguous and non-contiguous sequences of operations from each peer:
+A range-based state vector tracks contiguous and non-contiguous sequences of operations from each peer. The top-level keys represent the origin peer (the peer that generated the operations), and the values represent the counters of operations created by that peer:
 
 ```
 // Example representation
 {
-  "peer1": [[0,3], [999]],   // Operations 0-3 and 999 from peer1
-  "peer2": [[0,50]]          // Operations 0-50 from peer2
+  "peer1": [[0,3], [999]],   // Operations created by peer1 with counters 0-3 and 999 (e.g., 0@peer1, 1@peer1, 2@peer1, 3@peer1, 999@peer1)
+  "peer2": [[0,50]]          // Operations created by peer2 with counters 0-50 (e.g., 0@peer2, 1@peer2, ..., 50@peer2)
 }
 ```
 
@@ -40,6 +40,19 @@ A range-based state vector tracks contiguous and non-contiguous sequences of ope
    // Local: {"peer1": [[0,999]], "peer2": [[0,50]]}
    // Remote: {"peer1": [[0,500]], "peer2": [[0,100]]}
    // Result: {"peer1": [[0,999]], "peer2": [[0,100]]}
+   ```
+
+5. **Synchronization request example**:
+   ```
+   // Peer3 with state vector: {"peer1": [[0,3]], "peer2": [], "peer3": [[0,20]]}
+   // Connects to Peer1 with state vector: {"peer1": [[0,100]], "peer2": [[0,50]], "peer3": []}
+   
+   // Peer3 would request:
+   // - From peer1: Operations 4-100 (since it only has 0-3)
+   // - From peer2: Operations 0-50 (since it has none)
+   
+   // Peer1 would request:
+   // - From peer3: Operations 0-20 (since it has none)
    ```
 
 ### Benefits
