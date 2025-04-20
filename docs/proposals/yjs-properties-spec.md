@@ -25,6 +25,29 @@ export type VertexPropertyType =
   | Y.Doc;  // Direct Yjs document support
 ```
 
+### Operation Types
+
+We introduce a new operation type specifically for CRDT updates:
+
+```typescript
+// Existing operation types
+type VertexOperation = 
+  | AddVertexOp
+  | RemoveVertexOp
+  | MoveVertexOp
+  | SetVertexPropertyOp
+  | UpdateVertexPropertyOp;  // New operation type
+
+// New operation type for CRDT updates
+interface UpdateVertexPropertyOp {
+  id: OpId;
+  targetId: string;
+  key: string;
+  crdtType: string;  // e.g., "yjs"
+  value: Uint8Array;  // Binary CRDT update data
+}
+```
+
 ### API
 
 ```typescript
@@ -65,24 +88,22 @@ A critical aspect of this approach is ensuring efficient network transmission by
 We leverage Yjs's built-in differential update mechanism to ensure operations contain only the changes rather than the entire document state:
 
 ```typescript
-// When a document changes, we create an operation with just the changes
+// When a document changes, we create a dedicated update operation with just the changes
 ydoc.on('update', (update, origin) => {
   // 'update' contains only the changes since the last update
   if (origin !== 'reptree') {
-    // Create a RepTree property operation with just this delta
-    const op = {
+    // Create a dedicated UpdateVertexPropertyOp operation with just this delta
+    const op: UpdateVertexPropertyOp = {
       id: new OpId(this.lamportClock++, this.peerId),
       targetId: vertexId,
       key: key,
-      value: {
-        _type: 'yjs-update',
-        update: update  // Binary update data
-      },
+      crdtType: "yjs",
+      value: update,  // Binary update data
       transient: false
     };
     
     this.localOps.push(op);
-    this.applyProperty(op);
+    this.applyUpdate(op);
   }
 });
 ```
@@ -107,58 +128,64 @@ For synchronizing between peers, we implement these optimizations:
 ### Implementation Details
 
 ```typescript
-// Special handling for Yjs updates in the applyProperty method
-applyProperty(op) {
-  const property = op.value;
-  
-  // Check if this is a Yjs update
-  if (property && property._type === 'yjs-update') {
-    const vertexId = op.targetId;
-    const key = op.key;
-    
-    // Get current property value
-    const currentValue = this.getVertexProperty(vertexId, key);
-    
-    if (currentValue instanceof Y.Doc) {
-      // Apply the update directly to the Y.Doc instance
-      Y.applyUpdate(currentValue, property.update);
-    }
-  } 
-  // Regular property handling for all other properties (including full Y.Doc properties)
-  else {
-    // Handle regular property updates
-    this.setVertexProperty(op.targetId, op.key, property);
+// Apply operations based on operation type
+applyOperation(op) {
+  if (op instanceof UpdateVertexPropertyOp) {
+    this.applyUpdate(op);
+  } else if (op instanceof SetVertexPropertyOp) {
+    this.applyProperty(op);
+  } else {
+    // Handle other operation types
   }
 }
 
-// When setting a Y.Doc property, set up an observer
-setVertexProperty(vertexId: string, key: string, value: any): void {
-  if (value instanceof Y.Doc) {
-    // Make sure we have an observer for this document
-    this.setupYjsObserver(value, vertexId, key);
+// Special handling for CRDT updates
+applyUpdate(op: UpdateVertexPropertyOp) {
+  const vertexId = op.targetId;
+  const key = op.key;
+  
+  // Get current property value
+  const currentValue = this.getVertexProperty(vertexId, key);
+  
+  // Apply update based on CRDT type
+  if (op.crdtType === "yjs" && currentValue instanceof Y.Doc) {
+    // Apply the update directly to the Y.Doc instance
+    Y.applyUpdate(currentValue, op.value);
+  } else {
+    console.warn(`Cannot apply ${op.crdtType} update to property of type ${typeof currentValue}`);
+  }
+}
+
+// Handle regular property operations
+applyProperty(op: SetVertexPropertyOp) {
+  const property = op.value;
+  const vertexId = op.targetId;
+  const key = op.key;
+  
+  // If setting a new Y.Doc, set up observer
+  if (property instanceof Y.Doc) {
+    this.setupYjsObserver(property, vertexId, key);
   }
   
-  // Call the regular setVertexProperty implementation
-  super.setVertexProperty(vertexId, key, value);
+  // Set the property value
+  this.setVertexPropertyValue(vertexId, key, property);
 }
 
 // Set up observer for a Y.Doc to catch updates
 setupYjsObserver(doc: Y.Doc, vertexId: string, key: string) {
   doc.on('update', (update, origin) => {
     if (origin !== 'reptree') {
-      const op = {
+      const op: UpdateVertexPropertyOp = {
         id: new OpId(this.lamportClock++, this.peerId),
         targetId: vertexId,
         key: key,
-        value: {
-          _type: 'yjs-update',
-          update: update
-        },
+        crdtType: "yjs",
+        value: update,
         transient: false
       };
       
       this.localOps.push(op);
-      this.applyProperty(op);
+      this.applyUpdate(op);
     }
   });
 }
