@@ -2,7 +2,21 @@ import { VertexState } from "./VertexState";
 
 export type TreeVertexId = string;
 
-export type VertexPropertyType = string | number | boolean | string[] | number[] | boolean[] | undefined;
+export type YjsDocument = {
+  _type: 'yjs';
+  yjsType: 'map' | 'array' | 'text' | 'xmlFragment';
+  data: Uint8Array;  // Serialized Yjs document state
+}
+
+export type VertexPropertyType = 
+  | string 
+  | number 
+  | boolean 
+  | string[] 
+  | number[] 
+  | boolean[] 
+  | undefined
+  | YjsDocument;
 
 export type TreeVertexProperty = {
   readonly key: string;

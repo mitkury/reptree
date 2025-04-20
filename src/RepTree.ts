@@ -4,12 +4,14 @@
  */
 
 import { newMoveVertexOp, type MoveVertex, type SetVertexProperty, isMoveVertexOp, isSetPropertyOp, type VertexOperation, newSetVertexPropertyOp, newSetTransientVertexPropertyOp } from "./operations";
-import type { VertexPropertyType, TreeVertexProperty, VertexChangeEvent, TreeVertexId, VertexMoveEvent } from "./treeTypes";
+import type { VertexPropertyType, TreeVertexProperty, VertexChangeEvent, TreeVertexId, VertexMoveEvent, YjsDocument } from "./treeTypes";
 import { VertexState } from "./VertexState";
 import { TreeState } from "./TreeState";
 import { OpId } from "./OpId";
 import uuid from "./uuid";
 import { Vertex } from './Vertex';
+import * as Y from 'yjs';
+import { createYjsDocument, getYjsDocument, isYjsDocument, updateYjsDocument } from './YjsIntegration';
 
 type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
 
@@ -655,5 +657,43 @@ export class RepTree {
         this.setTransientPropertyAndItsOpId(op);
       }
     }
+  }
+
+  /**
+   * Creates a new Yjs document property value that can be set on a vertex
+   * @param yjsType The type of Yjs shared data structure to create
+   * @returns A YjsDocument property that can be used with setVertexProperty
+   */
+  createYjsDocument(yjsType: 'text' | 'map' | 'array' | 'xmlFragment'): YjsDocument {
+    return createYjsDocument(yjsType);
+  }
+
+  /**
+   * Gets a live Yjs document from a property value
+   * @param property The property value from getVertexProperty
+   * @param vertexId The ID of the vertex containing the property (for caching)
+   * @param key The property key (for caching)
+   * @returns A Y.Doc instance if the property is a YjsDocument, undefined otherwise
+   */
+  getYjsDocument(property: VertexPropertyType, vertexId: string, key: string): Y.Doc | undefined {
+    if (isYjsDocument(property)) {
+      // Create a unique cache key for this vertex and property
+      const docId = `${key}@${vertexId}`;
+      return getYjsDocument(property, docId);
+    }
+    return undefined;
+  }
+
+  /**
+   * Updates a vertex property with the latest state of a Yjs document
+   * This method should be called after making changes to a Yjs document
+   * @param vertexId The ID of the vertex containing the property
+   * @param key The property key
+   * @param ydoc The Y.Doc instance to update from
+   * @param yjsType The type of Yjs shared data structure
+   */
+  updateYjsDocumentProperty(vertexId: string, key: string, ydoc: Y.Doc, yjsType: 'map' | 'array' | 'text' | 'xmlFragment'): void {
+    const updatedDoc = updateYjsDocument(ydoc, yjsType);
+    this.setVertexProperty(vertexId, key, updatedDoc);
   }
 }

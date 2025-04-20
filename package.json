@@ -23,7 +23,9 @@
     "test": "npm run test:dist",
     "test:src": "node --loader ts-node/esm tests/test-runner.ts",
     "test:dist": "npm run build && node --loader ts-node/esm tests/test-runner.ts",
+    "test:yjs": "npm run build && node --loader ts-node/esm tests/yjs-integration.test.ts",
     "example": "npm run build && node --loader ts-node/esm examples/basic-usage.ts",
+    "example:yjs": "npm run build && node --loader ts-node/esm examples/yjs-example.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -46,5 +48,8 @@
     "ts-node": "^10.9.1",
     "tsup": "^8.0.1",
     "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "yjs": "^13.6.12"
   }
 }
