@@ -269,3 +269,78 @@ For initial implementation, the explicit approach provides better control over w
    - Automatic change detection
    - Transparent serialization
    - Migration path from Approach 1 
+
+### Property Operation Structure
+
+The actual property operation created for Yjs updates would look like this:
+
+```typescript
+// Implementation of createPropertyOp for Yjs updates
+function createPropertyOp(vertexId, key, update) {
+  // For Approach 1: YjsDocument wrapper
+  const yjsDoc = {
+    _type: 'yjs',
+    yjsType: this.getStoredYjsType(vertexId, key), // Get the document type from cache
+    data: update, // The binary delta update
+    isUpdate: true // Optional flag to indicate this is a delta, not full state
+  };
+  
+  // Create a standard RepTree SetVertexProperty operation
+  const op = {
+    id: new OpId(this.lamportClock++, this.peerId),
+    targetId: vertexId,
+    key: key,
+    value: yjsDoc,
+    transient: false
+  };
+  
+  // Add to local operations and apply
+  this.localOps.push(op);
+  this.applyProperty(op);
+}
+```
+
+### Applying Yjs Update Operations
+
+When receiving and applying a Yjs update operation, RepTree would handle it differently from regular properties:
+
+```typescript
+// Special handling for Yjs updates in the applyProperty method
+applyProperty(op) {
+  const property = op.value;
+  
+  // Check if this is a Yjs document update
+  if (isYjsDocument(property)) {
+    const vertexId = op.targetId;
+    const key = op.key;
+    const cacheKey = `${key}@${vertexId}`;
+    
+    // If we have a cached Y.Doc instance for this property
+    if (this.yjsDocCache.has(cacheKey)) {
+      const cachedDoc = this.yjsDocCache.get(cacheKey);
+      
+      // If this is a delta update, apply it to the existing document
+      if (property.isUpdate) {
+        // Apply only the update to the existing document
+        Y.applyUpdate(cachedDoc, property.data);
+        
+        // Fire document update event with 'remote' origin
+        cachedDoc.emit('updateProperty', [key, property.data, 'remote']);
+      } else {
+        // Full document replacement
+        // Create a new Y.Doc and replace the cached one
+        const newDoc = new Y.Doc();
+        Y.applyUpdate(newDoc, property.data);
+        this.yjsDocCache.set(cacheKey, newDoc);
+      }
+    } else {
+      // No cached document exists yet
+      // Create it and apply the update (whether delta or full state)
+      const newDoc = new Y.Doc();
+      Y.applyUpdate(newDoc, property.data);
+      this.yjsDocCache.set(cacheKey, newDoc);
+    }
+  }
+  
+  // Continue with normal property application...
+} 
