@@ -1,11 +1,11 @@
 import { VertexState } from "./VertexState";
+import * as Y from 'yjs';
 
 export type TreeVertexId = string;
 
-export type YjsDocument = {
-  _type: 'yjs';
-  yjsType: 'map' | 'array' | 'text' | 'xmlFragment';
-  data: Uint8Array;  // Serialized Yjs document state
+export type YjsUpdate = {
+  _type: 'yjs-update';
+  update: Uint8Array;  // Binary Yjs update data
 }
 
 export type VertexPropertyType = 
@@ -16,7 +16,7 @@ export type VertexPropertyType =
   | number[] 
   | boolean[] 
   | undefined
-  | YjsDocument;
+  | Y.Doc;  // Direct Y.Doc support
 
 export type TreeVertexProperty = {
   readonly key: string;

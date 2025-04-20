@@ -1,4 +1,4 @@
-import { RepTree, isYjsDocument } from '../dist/index.js';
+import { RepTree } from '../dist/index.js';
 import * as Y from 'yjs';
 
 function assert(condition: boolean, message: string) {
@@ -20,42 +20,26 @@ function testYjsTextDocument() {
   const rootId = tree.rootVertex.id;
   
   // Create a Yjs text document
-  const yjsDoc = tree.createYjsDocument('text');
-  assert(isYjsDocument(yjsDoc), 'yjsDoc should be recognized as a Yjs document');
+  const ydoc = new Y.Doc();
+  const ytext = ydoc.getText('default');
   
   // Set the document as a property
-  // The document becomes a property value that can be replicated like any other property
-  tree.setVertexProperty(rootId, 'content', yjsDoc);
+  tree.setVertexProperty(rootId, 'content', ydoc as any);
   
-  // Retrieve the property
-  const retrievedProperty = tree.getVertexProperty(rootId, 'content');
-  assert(isYjsDocument(retrievedProperty), 'Retrieved property should be a Yjs document');
+  // Retrieve the property and cast it to Y.Doc
+  const retrievedDoc = tree.getVertexProperty(rootId, 'content') as any as Y.Doc;
+  assert(retrievedDoc instanceof Y.Doc, 'Retrieved property should be a Y.Doc instance');
   
-  // Get the live Yjs document
-  // This turns the serialized property into a live Yjs document we can edit
-  // We need to pass vertex ID and key for caching purposes
-  const liveDoc = tree.getYjsDocument(retrievedProperty!, rootId, 'content');
-  assert(liveDoc !== undefined, 'Should be able to get a live Yjs document');
-  
-  // Get the text shared type
-  const ytext = liveDoc!.getText('default');
+  // Get the text shared type directly
+  const retrievedText = retrievedDoc.getText('default');
   
   // Insert some text - this uses Yjs's built-in CRDT capabilities
-  ytext.insert(0, 'Hello, collaborative world!');
+  retrievedText.insert(0, 'Hello, collaborative world!');
   
-  // Update the property - this converts the Yjs changes back into a RepTree property
-  tree.updateYjsDocumentProperty(rootId, 'content', liveDoc!, 'text');
-  
-  // Retrieve the updated property
-  const updatedProperty = tree.getVertexProperty(rootId, 'content');
-  assert(isYjsDocument(updatedProperty), 'Updated property should be a Yjs document');
-  
-  // Get the updated live document
-  const updatedLiveDoc = tree.getYjsDocument(updatedProperty!, rootId, 'content');
-  const updatedYtext = updatedLiveDoc!.getText('default');
+  // No need to update the property - changes to the Y.Doc are live
   
   // Check the text content
-  assertEqual(updatedYtext.toString(), 'Hello, collaborative world!', 'Text content should be preserved');
+  assertEqual(retrievedText.toString(), 'Hello, collaborative world!', 'Text content should be preserved');
   
   console.log('✅ testYjsTextDocument passed!');
   return true;
@@ -73,50 +57,40 @@ function testYjsSynchronization() {
   assert(rootId === treeB.rootVertex.id, 'Root IDs should match for initialized trees');
   
   // Create a Yjs text document in the first tree
-  const yjsDoc = treeA.createYjsDocument('text');
-  treeA.setVertexProperty(rootId, 'content', yjsDoc);
+  const docA = new Y.Doc();
+  const ytextA = docA.getText('default');
+  treeA.setVertexProperty(rootId, 'content', docA as any);
   
   // Modify the document
-  const contentA = treeA.getVertexProperty(rootId, 'content');
-  const liveDoc = treeA.getYjsDocument(contentA!, rootId, 'content');
-  const ytext = liveDoc!.getText('default');
-  
-  // This change uses Yjs's CRDT mechanism internally
-  ytext.insert(0, 'Hello from Tree A');
-  
-  // This converts the Yjs document to a RepTree property operation
-  treeA.updateYjsDocumentProperty(rootId, 'content', liveDoc!, 'text');
+  ytextA.insert(0, 'Hello from Tree A');
   
   // Synchronize the trees using RepTree's operation-based sync
   const ops = treeA.getAllOps();
   treeB.merge(ops);
   
   // Check if the document was synchronized
-  const retrievedProperty = treeB.getVertexProperty(rootId, 'content');
-  assert(isYjsDocument(retrievedProperty), 'Retrieved property from treeB should be a Yjs document');
+  const docB = treeB.getVertexProperty(rootId, 'content') as any as Y.Doc;
+  assert(docB instanceof Y.Doc, 'Retrieved property from treeB should be a Y.Doc instance');
   
-  // Get the live document from the second tree
-  const liveBDoc = treeB.getYjsDocument(retrievedProperty!, rootId, 'content');
-  const ytextB = liveBDoc!.getText('default');
+  // Get the text shared type from the second tree
+  const ytextB = docB.getText('default');
   
   // Check the text content
   assertEqual(ytextB.toString(), 'Hello from Tree A', 'Text content should be synced between trees');
   
   // Make changes in the second tree
   ytextB.insert(ytextB.length, ' and Tree B');
-  treeB.updateYjsDocumentProperty(rootId, 'content', liveBDoc!, 'text');
   
   // Sync back to the first tree
   const opsB = treeB.getAllOps();
   treeA.merge(opsB);
   
   // Check if the changes were synchronized back
-  const finalProperty = treeA.getVertexProperty(rootId, 'content');
-  const finalLiveDoc = treeA.getYjsDocument(finalProperty!, rootId, 'content');
-  const finalYtext = finalLiveDoc!.getText('default');
+  const finalDoc = treeA.getVertexProperty(rootId, 'content') as any as Y.Doc;
+  const finalText = finalDoc.getText('default');
   
   // Check the text content
-  assertEqual(finalYtext.toString(), 'Hello from Tree A and Tree B', 'Bi-directional sync should work');
+  assertEqual(finalText.toString(), 'Hello from Tree A and Tree B', 'Bi-directional sync should work');
   
   console.log('✅ testYjsSynchronization passed!');
   return true;
@@ -128,31 +102,23 @@ function testYjsMap() {
   const rootId = tree.rootVertex.id;
   
   // Create a Yjs map document
-  const yjsDoc = tree.createYjsDocument('map');
-  tree.setVertexProperty(rootId, 'metadata', yjsDoc);
-  
-  // Get the live document
-  const metadata = tree.getVertexProperty(rootId, 'metadata');
-  const liveDoc = tree.getYjsDocument(metadata!, rootId, 'metadata');
-  const ymap = liveDoc!.getMap('default');
+  const ydoc = new Y.Doc();
+  const ymap = ydoc.getMap('default');
+  tree.setVertexProperty(rootId, 'metadata', ydoc as any);
   
   // Add some data to the map
   ymap.set('title', 'Collaborative Document');
   ymap.set('author', 'Test User');
   ymap.set('version', 1);
   
-  // Update the property
-  tree.updateYjsDocumentProperty(rootId, 'metadata', liveDoc!, 'map');
-  
-  // Retrieve the updated property
-  const updatedProperty = tree.getVertexProperty(rootId, 'metadata');
-  const updatedLiveDoc = tree.getYjsDocument(updatedProperty!, rootId, 'metadata');
-  const updatedYmap = updatedLiveDoc!.getMap('default');
+  // Retrieve the property (should be the same instance)
+  const retrievedDoc = tree.getVertexProperty(rootId, 'metadata') as any as Y.Doc;
+  const retrievedMap = retrievedDoc.getMap('default');
   
   // Check the map contents
-  assertEqual(updatedYmap.get('title'), 'Collaborative Document', 'Map title should be preserved');
-  assertEqual(updatedYmap.get('author'), 'Test User', 'Map author should be preserved');
-  assertEqual(updatedYmap.get('version'), 1, 'Map version should be preserved');
+  assertEqual(retrievedMap.get('title'), 'Collaborative Document', 'Map title should be preserved');
+  assertEqual(retrievedMap.get('author'), 'Test User', 'Map author should be preserved');
+  assertEqual(retrievedMap.get('version'), 1, 'Map version should be preserved');
   
   console.log('✅ testYjsMap passed!');
   return true;

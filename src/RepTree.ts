@@ -3,15 +3,15 @@
  * Copyright (c) 2024 Dmitry Kury (d@dkury.com)
  */
 
-import { newMoveVertexOp, type MoveVertex, type SetVertexProperty, isMoveVertexOp, isSetPropertyOp, type VertexOperation, newSetVertexPropertyOp, newSetTransientVertexPropertyOp } from "./operations";
-import type { VertexPropertyType, TreeVertexProperty, VertexChangeEvent, TreeVertexId, VertexMoveEvent, YjsDocument } from "./treeTypes";
+import { newMoveVertexOp, type MoveVertex, type SetVertexProperty, isMoveVertexOp, isSetPropertyOp, type VertexOperation, newSetVertexPropertyOp, newSetTransientVertexPropertyOp, isYjsUpdateOp, newYjsUpdateOp, YjsUpdateOperation } from "./operations";
+import type { VertexPropertyType, TreeVertexProperty, VertexChangeEvent, TreeVertexId, VertexMoveEvent, YjsUpdate } from "./treeTypes";
 import { VertexState } from "./VertexState";
 import { TreeState } from "./TreeState";
 import { OpId } from "./OpId";
 import uuid from "./uuid";
 import { Vertex } from './Vertex';
 import * as Y from 'yjs';
-import { createYjsDocument, getYjsDocument, isYjsDocument, updateYjsDocument } from './YjsIntegration';
+import { getYjsSharedType, isYDoc } from './YjsIntegration';
 
 type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
 
@@ -41,6 +41,7 @@ export class RepTree {
   private parentIdBeforeMove: Map<OpId, string | null | undefined> = new Map();
   private opAppliedCallbacks: ((op: VertexOperation) => void)[] = [];
   private maxDepth = RepTree.DEFAULT_MAX_DEPTH;
+  private yjsUpdateOps: YjsUpdateOperation[] = []; // Track Yjs update operations
 
   /**
    * @param peerId - The peer ID of the current client
@@ -84,7 +85,7 @@ export class RepTree {
   }
 
   getAllOps(): ReadonlyArray<VertexOperation> {
-    return [...this.moveOps, ...this.setPropertyOps];
+    return [...this.moveOps, ...this.setPropertyOps, ...this.yjsUpdateOps];
   }
 
   getVertex(vertexId: string): Vertex | undefined {
@@ -504,15 +505,23 @@ export class RepTree {
   }
 
   private applyOps(ops: ReadonlyArray<VertexOperation>) {
+    // Update our clock to be at least as large as any op we're about to apply.
     for (const op of ops) {
-      if (this.appliedOps.has(op.id.toString())) {
-        continue;
-      }
+      this.updateLamportClock(op);
+    }
 
+    if (ops.length > 10000) {
+      this.applyOpsOptimizedForLotsOfMoves(ops);
+      return;
+    }
+
+    for (const op of ops) {
       if (isMoveVertexOp(op)) {
-        this.applyMove(op);
+        this.tryToMove(op);
       } else if (isSetPropertyOp(op)) {
         this.applyProperty(op);
+      } else if (isYjsUpdateOp(op)) {
+        this.applyYjsUpdate(op);
       }
     }
   }
@@ -603,53 +612,62 @@ export class RepTree {
   }
 
   private setPropertyAndItsOpId(op: SetVertexProperty) {
-    this.propertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
+    this.propertiesAndTheirOpIds.set(`${op.key}@${op.targetId}` as PropertyKeyAtVertexId, op.id);
     this.state.setProperty(op.targetId, op.key, op.value);
     this.reportOpAsApplied(op);
   }
 
   private setTransientPropertyAndItsOpId(op: SetVertexProperty) {
-    this.transientPropertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
+    this.transientPropertiesAndTheirOpIds.set(`${op.key}@${op.targetId}` as PropertyKeyAtVertexId, op.id);
     this.state.setTransientProperty(op.targetId, op.key, op.value);
     this.reportOpAsApplied(op);
   }
 
   private applyProperty(op: SetVertexProperty) {
-    const targetVertex = this.state.getVertex(op.targetId);
-    if (!targetVertex) {
-      // No need to handle transient properties if the vertex doesn't exist
-      if (op.transient) {
-        return;
-      }
-
-      // If the vertex doesn't exist, we will wait for the move operation to appear that will create the vertex
-      // so we can apply the property then.
-      if (!this.pendingPropertiesWithMissingVertex.has(op.targetId)) {
-        this.pendingPropertiesWithMissingVertex.set(op.targetId, []);
-      }
-      this.pendingPropertiesWithMissingVertex.get(op.targetId)!.push(op);
+    // Skip if we've already applied this op.
+    if (this.appliedOps.has(op.id.toString())) {
       return;
     }
 
-    this.updateLamportClock(op);
+    // @TODO: check vertexExists
+    // skip it if it doesn't exist
 
-    const prevTransientOpId = this.transientPropertiesAndTheirOpIds.get(`${op.key}@${op.targetId}`);
+    const targetVertexId = op.targetId;
+    const targetVertex = this.state.getVertex(targetVertexId);
+    if (!targetVertex) {
+      // if the target vertex doesn't exist, we'll store the property in a map
+      // and apply it when the vertex is created
+      let pendingProps = this.pendingPropertiesWithMissingVertex.get(targetVertexId);
+      if (!pendingProps) {
+        pendingProps = [];
+        this.pendingPropertiesWithMissingVertex.set(targetVertexId, pendingProps);
+      }
+      pendingProps.push(op);
+      return;
+    }
 
-    const prevProp = targetVertex.getProperty(op.key);
-    const prevOpId = this.propertiesAndTheirOpIds.get(`${op.key}@${op.targetId}`);
+    // Otherwise, we'll apply the property
+    this.setPropertyOps.push(op);
+    this.reportOpAsApplied(op);
+
+    const propId = `${op.key}@${op.targetId}` as PropertyKeyAtVertexId;
+    const prevOpId = this.propertiesAndTheirOpIds.get(propId);
+    const prevTransientOpId = this.transientPropertiesAndTheirOpIds.get(propId);
 
     if (!op.transient) {
-      this.setPropertyOps.push(op);
-
-      // Apply the property if it's not already applied or if the current op is newer
-      // This is the last writer wins approach that ensures the same state between replicas.
-      if (!prevProp || !prevOpId || op.id.isGreaterThan(prevOpId)) {
+      // Only apply if this op is greater than the previous op for this property
+      if (!prevOpId || op.id.isGreaterThan(prevOpId)) {
         this.setPropertyAndItsOpId(op);
+      }
+
+      // Special case for Y.Doc properties - set up observers
+      if (op.value instanceof Y.Doc) {
+        this.setupYjsObserver(op.value, op.targetId, op.key);
       }
 
       // Remove the transient property if the current op is greater
       if (prevTransientOpId && op.id.isGreaterThan(prevTransientOpId)) {
-        this.transientPropertiesAndTheirOpIds.delete(`${op.key}@${op.targetId}`);
+        this.transientPropertiesAndTheirOpIds.delete(`${op.key}@${op.targetId}` as PropertyKeyAtVertexId);
         targetVertex.removeTransientProperty(op.key);
       }
     } else {
@@ -660,40 +678,54 @@ export class RepTree {
   }
 
   /**
-   * Creates a new Yjs document property value that can be set on a vertex
-   * @param yjsType The type of Yjs shared data structure to create
-   * @returns A YjsDocument property that can be used with setVertexProperty
+   * Apply a Yjs update operation to a vertex property
+   * @param op The Yjs update operation to apply
    */
-  createYjsDocument(yjsType: 'text' | 'map' | 'array' | 'xmlFragment'): YjsDocument {
-    return createYjsDocument(yjsType);
-  }
-
-  /**
-   * Gets a live Yjs document from a property value
-   * @param property The property value from getVertexProperty
-   * @param vertexId The ID of the vertex containing the property (for caching)
-   * @param key The property key (for caching)
-   * @returns A Y.Doc instance if the property is a YjsDocument, undefined otherwise
-   */
-  getYjsDocument(property: VertexPropertyType, vertexId: string, key: string): Y.Doc | undefined {
-    if (isYjsDocument(property)) {
-      // Create a unique cache key for this vertex and property
-      const docId = `${key}@${vertexId}`;
-      return getYjsDocument(property, docId);
+  private applyYjsUpdate(op: YjsUpdateOperation) {
+    // Skip if we've already applied this op
+    if (this.appliedOps.has(op.id.toString())) {
+      return;
     }
-    return undefined;
+
+    const targetVertexId = op.targetId;
+    const targetVertex = this.state.getVertex(targetVertexId);
+    if (!targetVertex) {
+      // Cannot apply update to non-existent vertex
+      return;
+    }
+
+    // Get the current property value
+    const property = this.getVertexProperty(targetVertexId, op.key);
+    
+    // If it's a Y.Doc, apply the update directly
+    if (property instanceof Y.Doc) {
+      Y.applyUpdate(property, (op.value as YjsUpdate).update);
+      this.yjsUpdateOps.push(op); // Store the update operation
+      this.reportOpAsApplied(op);
+    }
   }
 
   /**
-   * Updates a vertex property with the latest state of a Yjs document
-   * This method should be called after making changes to a Yjs document
-   * @param vertexId The ID of the vertex containing the property
-   * @param key The property key
-   * @param ydoc The Y.Doc instance to update from
-   * @param yjsType The type of Yjs shared data structure
+   * Set up an observer for a Y.Doc to track changes
+   * @param doc The Y.Doc to observe
+   * @param vertexId The ID of the vertex containing the Y.Doc
+   * @param key The property key where the Y.Doc is stored
    */
-  updateYjsDocumentProperty(vertexId: string, key: string, ydoc: Y.Doc, yjsType: 'map' | 'array' | 'text' | 'xmlFragment'): void {
-    const updatedDoc = updateYjsDocument(ydoc, yjsType);
-    this.setVertexProperty(vertexId, key, updatedDoc);
+  private setupYjsObserver(doc: Y.Doc, vertexId: string, key: string) {
+    // Remove any existing observers by recreating the callback with a new origin
+    const uniqueOrigin = `reptree-${this.peerId}-${Date.now()}`;
+    
+    doc.on('update', (update, origin) => {
+      if (origin !== uniqueOrigin) {
+        // Create a Yjs update operation
+        this.lamportClock++;
+        const op = newYjsUpdateOp(this.lamportClock, this.peerId, vertexId, key, update);
+        
+        // Add to local operations and apply
+        this.localOps.push(op);
+        this.yjsUpdateOps.push(op); // Store the update operation
+        this.applyYjsUpdate(op);
+      }
+    });
   }
 }

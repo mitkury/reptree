@@ -12,7 +12,7 @@ export * from './treeTypes.js';
 export * from './operations.js';
 
 // Yjs integration
-export { isYjsDocument, getYjsSharedType, createYjsDocument, getYjsDocument, updateYjsDocument } from './YjsIntegration.js';
+export { isYDoc, getYjsSharedType } from './YjsIntegration.js';
 
 // Utilities
 export { default as uuid } from './uuid.js'; 
