@@ -157,9 +157,8 @@ For synchronizing between peers, we implement the state vector optimization:
    - These deltas contain only the changed information, not the entire document
 
 3. **Targeted Syncs**:
-   - When a peer reconnects, we exchange state vectors using `Y.encodeStateVector(ydoc)`
-   - Then generate differential updates with `Y.encodeStateAsUpdate(ydoc, remoteStateVector)`
-   - This ensures we only transmit missing parts of the document
+   - RepTree's operation exchange mechanism will handle distributing Yjs updates
+   - The Yjs documents will maintain internal state while RepTree manages operation synchronization
 
 ### Approach 1 Implementation (Current)
 
@@ -281,8 +280,7 @@ function createPropertyOp(vertexId, key, update) {
   const yjsDoc = {
     _type: 'yjs',
     yjsType: this.getStoredYjsType(vertexId, key), // Get the document type from cache
-    data: update, // The binary delta update
-    isUpdate: true // Optional flag to indicate this is a delta, not full state
+    data: update // The binary delta update
   };
   
   // Create a standard RepTree SetVertexProperty operation
@@ -313,34 +311,71 @@ applyProperty(op) {
   if (isYjsDocument(property)) {
     const vertexId = op.targetId;
     const key = op.key;
-    const cacheKey = `${key}@${vertexId}`;
     
-    // If we have a cached Y.Doc instance for this property
-    if (this.yjsDocCache.has(cacheKey)) {
-      const cachedDoc = this.yjsDocCache.get(cacheKey);
+    // Get current property value if it exists
+    const currentValue = this.getVertexProperty(vertexId, key);
+    
+    if (currentValue && isYjsDocument(currentValue)) {
+      // If we already have a Yjs document property, we need to apply the update
+      // to the existing document
       
-      // If this is a delta update, apply it to the existing document
-      if (property.isUpdate) {
-        // Apply only the update to the existing document
-        Y.applyUpdate(cachedDoc, property.data);
-        
-        // Fire document update event with 'remote' origin
-        cachedDoc.emit('updateProperty', [key, property.data, 'remote']);
-      } else {
-        // Full document replacement
-        // Create a new Y.Doc and replace the cached one
-        const newDoc = new Y.Doc();
-        Y.applyUpdate(newDoc, property.data);
-        this.yjsDocCache.set(cacheKey, newDoc);
-      }
+      // Create a temporary Y.Doc to decode the update
+      const tempDoc = new Y.Doc();
+      
+      // Apply the update to the temp doc
+      Y.applyUpdate(tempDoc, property.data);
+      
+      // Extract the updated data
+      const updatedData = Y.encodeStateAsUpdate(tempDoc);
+      
+      // Store the updated document in the vertex property
+      this.setVertexProperty(vertexId, key, {
+        _type: 'yjs',
+        yjsType: property.yjsType,
+        data: updatedData
+      });
+      
+      // When accessing this property later through getYjsDocument(),
+      // we'll deserialize it on demand
     } else {
-      // No cached document exists yet
-      // Create it and apply the update (whether delta or full state)
-      const newDoc = new Y.Doc();
-      Y.applyUpdate(newDoc, property.data);
-      this.yjsDocCache.set(cacheKey, newDoc);
+      // No existing Yjs document, just set the property directly
+      this.setVertexProperty(vertexId, key, property);
     }
+  } else {
+    // Handle regular property updates
+    this.setVertexProperty(op.targetId, op.key, property);
   }
+}
+
+/**
+ * Gets a live Y.Doc from a property value
+ */
+getYjsDocument(property: YjsDocument, vertexId: string, key: string): Y.Doc {
+  // Create a new Y.Doc and apply the stored update
+  const ydoc = new Y.Doc();
+  Y.applyUpdate(ydoc, property.data);
   
-  // Continue with normal property application...
-} 
+  // Set up an observer to handle changes to the document
+  ydoc.on('update', (update, origin) => {
+    if (origin !== 'reptree') {
+      this.updateYjsDocumentProperty(vertexId, key, ydoc, property.yjsType);
+    }
+  });
+  
+  return ydoc;
+}
+
+/**
+ * Updates a Yjs document property with the latest changes
+ */
+updateYjsDocumentProperty(vertexId: string, key: string, ydoc: Y.Doc, yjsType: string): void {
+  // Create an update from the current state
+  const update = Y.encodeStateAsUpdate(ydoc);
+  
+  // Create and apply a property update operation
+  this.setVertexProperty(vertexId, key, {
+    _type: 'yjs',
+    yjsType,
+    data: update
+  });
+}
