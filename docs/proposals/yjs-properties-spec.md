@@ -125,6 +125,81 @@ text.insert(text.length, ' and universe!');
 - Potential for unexpected behavior with observers
 - Serialization/deserialization happens implicitly
 
+## Optimizing Operation Size
+
+A critical aspect of both approaches is ensuring efficient network transmission by minimizing operation size when documents are edited.
+
+### Efficient Update Encoding
+
+For both approaches, we leverage Yjs's built-in differential update mechanism to ensure operations contain only the changes rather than the entire document state:
+
+```typescript
+// When a document changes, we can generate a minimal update by:
+ydoc.on('update', (update, origin) => {
+  // 'update' contains only the changes since the last update
+  // This is already a compressed binary format
+  if (origin !== 'reptree') {
+    // Create a RepTree property operation with just this delta
+    createPropertyOp(vertexId, key, update);
+  }
+});
+```
+
+### State Vector Optimization
+
+For synchronizing between peers, we implement the state vector optimization:
+
+1. **Initial Sync**:
+   - For complete document synchronization, we use `Y.encodeStateAsUpdate(ydoc)`
+
+2. **Incremental Updates**:
+   - For ongoing changes, we use Yjs's update events which provide binary encoded deltas
+   - These deltas contain only the changed information, not the entire document
+
+3. **Targeted Syncs**:
+   - When a peer reconnects, we exchange state vectors using `Y.encodeStateVector(ydoc)`
+   - Then generate differential updates with `Y.encodeStateAsUpdate(ydoc, remoteStateVector)`
+   - This ensures we only transmit missing parts of the document
+
+### Approach 1 Implementation (Current)
+
+In our current implementation, `updateYjsDocumentProperty` uses the above optimizations:
+
+```typescript
+updateYjsDocumentProperty(vertexId, key, ydoc, yjsType) {
+  // Generate optimized update that only contains changes
+  const stateVector = this.getStoredStateVector(vertexId, key);
+  const update = Y.encodeStateAsUpdate(ydoc, stateVector);
+  
+  // Store the current state vector for future delta generation
+  this.storeStateVector(vertexId, key, Y.encodeStateVector(ydoc));
+  
+  // Create property operation with this minimal update
+  this.setVertexProperty(vertexId, key, {
+    _type: 'yjs',
+    yjsType,
+    data: update
+  });
+}
+```
+
+### Approach 2 Implementation (Proposed)
+
+The automatic update detection would similarly use these optimizations:
+
+```typescript
+// When attaching observer to a Y.Doc property
+attachObserver(vertexId, key, ydoc) {
+  ydoc.on('update', (update, origin) => {
+    if (origin !== 'reptree') {
+      // Only create a new property operation with this delta update
+      // No need to re-serialize the entire document
+      this.setVertexProperty(vertexId, key, ydoc, 'reptree');
+    }
+  });
+}
+```
+
 ## Conflict Resolution
 
 Both approaches use a hybrid conflict resolution strategy:
