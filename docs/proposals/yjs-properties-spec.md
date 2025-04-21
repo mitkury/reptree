@@ -32,14 +32,12 @@ We introduce a new operation type specifically for CRDT updates:
 ```typescript
 // Existing operation types
 type VertexOperation = 
-  | AddVertexOp
-  | RemoveVertexOp
   | MoveVertexOp
   | SetVertexPropertyOp
-  | UpdateVertexPropertyOp;  // New operation type
+  | ModifyVertexPropertyOp;  // New operation type
 
 // New operation type for CRDT updates
-interface UpdateVertexPropertyOp {
+interface ModifyVertexPropertyOp {
   id: OpId;
   targetId: string;
   key: string;
@@ -92,8 +90,8 @@ We leverage Yjs's built-in differential update mechanism to ensure operations co
 ydoc.on('update', (update, origin) => {
   // 'update' contains only the changes since the last update
   if (origin !== 'reptree') {
-    // Create a dedicated UpdateVertexPropertyOp operation with just this delta
-    const op: UpdateVertexPropertyOp = {
+    // Create a dedicated ModifyVertexPropertyOp operation with just this delta
+    const op: ModifyVertexPropertyOp = {
       id: new OpId(this.lamportClock++, this.peerId),
       targetId: vertexId,
       key: key,
@@ -130,7 +128,7 @@ For synchronizing between peers, we implement these optimizations:
 ```typescript
 // Apply operations based on operation type
 applyOperation(op) {
-  if (op instanceof UpdateVertexPropertyOp) {
+  if (op instanceof ModifyVertexPropertyOp) {
     this.applyUpdate(op);
   } else if (op instanceof SetVertexPropertyOp) {
     this.applyProperty(op);
@@ -140,7 +138,7 @@ applyOperation(op) {
 }
 
 // Special handling for CRDT updates
-applyUpdate(op: UpdateVertexPropertyOp) {
+applyUpdate(op: ModifyVertexPropertyOp) {
   const vertexId = op.targetId;
   const key = op.key;
   
@@ -175,7 +173,7 @@ applyProperty(op: SetVertexPropertyOp) {
 setupYjsObserver(doc: Y.Doc, vertexId: string, key: string) {
   doc.on('update', (update, origin) => {
     if (origin !== 'reptree') {
-      const op: UpdateVertexPropertyOp = {
+      const op: ModifyVertexPropertyOp = {
         id: new OpId(this.lamportClock++, this.peerId),
         targetId: vertexId,
         key: key,
