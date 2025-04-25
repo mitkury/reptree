@@ -56,6 +56,23 @@ const person = tree.parseVertex(nodeId, Person);
 // person: { name: string; age: number }
 ```
 
+## TypeScript Inference
+
+Zod can infer a TypeScript type directly from your schema:
+
+```ts
+export const PersonSchema = z.object({
+  name: z.string(),
+  age: z.number().int().nonnegative(),
+});
+
+export type Person = z.infer<typeof PersonSchema>;
+
+const personTyped: Person = tree.parseVertex(nodeId, PersonSchema);
+```
+
+This gives you a static `Person` type (`{ name: string; age: number }`) guaranteed by runtime validation.
+
 ## Implementation Steps
 
 1. **Add `zod` dependency**  
