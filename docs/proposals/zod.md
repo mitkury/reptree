@@ -73,6 +73,57 @@ const personTyped: Person = tree.parseVertex(nodeId, PersonSchema);
 
 This gives you a static `Person` type (`{ name: string; age: number }`) guaranteed by runtime validation.
 
+## Typed Child Creation
+
+Vertices support passing a plain object to `newChild`, which spreads each key as a property. To enforce your Zod schema and ensure values meet `VertexPropertyType`, you can add a helper:
+
+```ts
+import { ZodSchema } from 'zod';
+import { VertexPropertyType } from '../src/treeTypes';
+
+Vertex.prototype.newTypedChild = function<T extends Record<string, VertexPropertyType>>(
+  schema: ZodSchema<T>,
+  raw: unknown
+): Vertex & { data: T } {
+  const props = schema.parse(raw);
+  const v = this.newChild(props);
+  return Object.assign(v, { data: props });
+};
+
+// Usage:
+const rawData = { name: 'Alice', age: 30, tags: ['friend'] };
+const child = parent.newTypedChild(PersonSchema, rawData);
+// child.data: Person
+```
+
+## Reactive Vertex Proxy
+
+For bi-directional reactivity, you can wrap a vertex in a JS Proxy so that:
+- **Reads** reflect the latest CRDT state.
+- **Writes** call `setVertexProperty` automatically.
+
+```ts
+function createReactiveVertex<T extends Record<string, unknown>>(tree: RepTree, id: string): T {
+  return new Proxy({} as any, {
+    get(_, prop: string) {
+      return tree.getVertexProperty(id, prop);
+    },
+    set(_, prop: string, value) {
+      tree.setVertexProperty(id, prop, value as any);
+      return true;
+    }
+  });
+}
+
+// Usage:
+const reactiveNode = createReactiveVertex(tree, nodeId);
+console.log(reactiveNode.name);       // live from CRDT
+reactiveNode.age = 31;               // updates CRDT
+// Listening for CRDT events and triggers (optional) to sync UI
+```
+
+This gives you a lightweight reactive view of the vertex. You may optionally integrate with frameworks (Vue, React) by emitting events on CRDT callbacks.
+
 ## Implementation Steps
 
 1. **Add `zod` dependency**  
@@ -82,6 +133,7 @@ This gives you a static `Person` type (`{ name: string; age: number }`) guarante
 2. **Extend `RepTree`**: add `parseVertex` method as above.
 3. **Document**: update README and types with usage examples.
 4. **Tests**: add unit tests to ensure schemas catch invalid data and succeed when valid.
+5. **Remove unchecked helpers**: remove `getAsTypedObject` and `getChildrenAsTypedArray` from `Vertex`. These legacy methods can be dropped without backward compatibility.
 
 ## Benefits
 
