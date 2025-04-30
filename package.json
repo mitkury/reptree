@@ -26,6 +26,7 @@
     "test:range": "npm run build && node --loader ts-node/esm tests/range-state-vector.test.ts",
     "test:vector-fuzzy": "npm run build && node --loader ts-node/esm tests/vector-fuzzy.test.ts",
     "test:compare-sync": "npm run build && node --loader ts-node/esm tests/compare-sync-methods.ts",
+    "test:all-fuzzy": "npm run build && node --loader ts-node/esm tests/run-all-fuzzy-tests.ts",
     "example": "npm run build && node --loader ts-node/esm examples/basic-usage.ts",
     "prepublishOnly": "npm run build"
   },

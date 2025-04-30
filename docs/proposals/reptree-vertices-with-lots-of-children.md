@@ -1,8 +1,8 @@
-# Proposal: Optimizing ReplicatedTree for Vertices with Large Numbers of Children
+# Proposal: Optimizing RepTree for Vertices with Large Numbers of Children
 
 ## Background
 
-The current implementation of `ReplicatedTree` uses arrays to store children of vertices. While this is efficient for the common case of vertices with a small number of children, it may cause performance issues when vertices have a large number of children (thousands or more). This proposal outlines potential optimizations and a research plan for addressing this limitation.
+The current implementation of `RepTree` uses arrays to store children of vertices. While this is efficient for the common case of vertices with a small number of children, it may cause performance issues when vertices have a large number of children (thousands or more). This proposal outlines potential optimizations and a research plan for addressing this limitation.
 
 ## Current Implementation Analysis
 
