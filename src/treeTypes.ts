@@ -32,3 +32,13 @@ export type VertexChildrenChangeEvent = VertexChangeEvent & {
   type: 'children';
   children: VertexState[];
 }
+
+/**
+ * Type definition for operation ID range used in state vectors
+ */
+export interface OpIdRange {
+  peerId: string;
+  start: number;
+  end: number;
+}
+
