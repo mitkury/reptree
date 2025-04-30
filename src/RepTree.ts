@@ -93,7 +93,7 @@ export class RepTree {
   private localOps: VertexOperation[] = [];
   private pendingMovesWithMissingParent: Map<string, MoveVertex[]> = new Map();
   private pendingPropertiesWithMissingVertex: Map<string, SetVertexProperty[]> = new Map();
-  private appliedOps: Set<string> = new Set();
+  private knownOps: Set<string> = new Set();
   private parentIdBeforeMove: Map<OpId, string | null | undefined> = new Map();
   private opAppliedCallbacks: ((op: VertexOperation) => void)[] = [];
   private maxDepth = RepTree.DEFAULT_MAX_DEPTH;
@@ -335,7 +335,7 @@ export class RepTree {
 
   /** Applies operations in an optimized way, sorting move ops by OpId to avoid undo-do-redo cycles */
   private applyOpsOptimizedForLotsOfMoves(ops: ReadonlyArray<VertexOperation>) {
-    const newMoveOps = ops.filter(op => isMoveVertexOp(op) && !this.appliedOps.has(op.id.toString()));
+    const newMoveOps = ops.filter(op => isMoveVertexOp(op) && !this.knownOps.has(op.id.toString()));
     if (newMoveOps.length > 0) {
       // Get an array of all move ops (without already applied ones)
       const allMoveOps = [...this.moveOps, ...newMoveOps] as MoveVertex[];
@@ -349,7 +349,7 @@ export class RepTree {
     }
 
     // Get an array of all property ops (without already applied ones)
-    const propertyOps = ops.filter(op => isSetPropertyOp(op) && !this.appliedOps.has(op.id.toString())) as SetVertexProperty[];
+    const propertyOps = ops.filter(op => isSetPropertyOp(op) && !this.knownOps.has(op.id.toString())) as SetVertexProperty[];
     for (let i = 0, len = propertyOps.length; i < len; i++) {
       const op = propertyOps[i];
       this.applyProperty(op);
@@ -639,6 +639,10 @@ export class RepTree {
       // This is the last writer wins approach that ensures the same state between replicas.
       if (!prevProp || !prevOpId || op.id.isGreaterThan(prevOpId)) {
         this.setPropertyAndItsOpId(op);
+      } else {
+        // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
+        // if we ever receive the same op from another peer.
+        this.knownOps.add(op.id.toString());
       }
 
       // Remove the transient property if the current op is greater
@@ -655,7 +659,9 @@ export class RepTree {
 
   private applyOps(ops: ReadonlyArray<VertexOperation>) {
     for (const op of ops) {
-      if (this.appliedOps.has(op.id.toString())) {
+      // We skip the operation if we already know about it.
+      // This is to avoid processing the same operation multiple times.
+      if (this.knownOps.has(op.id.toString())) {
         continue;
       }
 
@@ -668,7 +674,7 @@ export class RepTree {
   }
 
   private reportOpAsApplied(op: VertexOperation) {
-    this.appliedOps.add(op.id.toString());
+    this.knownOps.add(op.id.toString());
     this.updateStateVector(op); // Call the method correctly
     for (const callback of this.opAppliedCallbacks) {
       callback(op);
