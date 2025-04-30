@@ -209,5 +209,5 @@ function pickRandomAction(): RandomAction {
 // Run the test
 console.log("Running Vector-Based Fuzzy Test...");
 // Use smaller values for faster testing: 3 trees, 2 rounds, 20 actions per round
-vectorFuzzyTest(3, 2, 20);
+vectorFuzzyTest(3, 10, 1000);
 console.log("Vector-Based Fuzzy Test completed successfully!"); 
