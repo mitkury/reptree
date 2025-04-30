@@ -748,11 +748,10 @@ export class RepTree {
 
   /**
    * Returns the current state vector.
-   * Since the state vector is maintained incrementally, this is an O(1) operation.
+   * Returns a readonly reference to the internal state vector.
    */
-  getStateVector(): Record<string, number[][]> {
-    // Return a deep copy to prevent external modifications
-    return JSON.parse(JSON.stringify(this.stateVector));
+  getStateVector(): Readonly<Record<string, number[][]>> {
+    return this.stateVector;
   }
 
   /**
