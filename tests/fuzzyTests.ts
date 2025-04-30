@@ -103,12 +103,23 @@ function synchronizeTrees(trees: RepTree[]): void {
     const sourceTree = trees[i];
     const ops = sourceTree.getAllOps();
     
+    console.log(`  Tree ${i + 1} has ${sourceTree.getMoveOps().length} move ops and ${ops.length - sourceTree.getMoveOps().length} property ops`);
+    
     for (let j = 0; j < treeCount; j++) {
       if (i !== j) {
         console.log(`  Syncing ops from Tree ${i + 1} to Tree ${j + 1}`);
         trees[j].merge(ops);
       }
     }
+  }
+  
+  // Log the final state of all trees after synchronization
+  console.log("\n  After synchronization:");
+  for (let i = 0; i < treeCount; i++) {
+    const moveOpsCount = trees[i].getMoveOps().length;
+    const allOpsCount = trees[i].getAllOps().length;
+    const propOpsCount = allOpsCount - moveOpsCount;
+    console.log(`  Tree ${i + 1}: ${moveOpsCount} move ops, ${propOpsCount} property ops, ${allOpsCount} total ops`);
   }
 }
 
