@@ -24,6 +24,7 @@
     "test:src": "node --loader ts-node/esm tests/test-runner.ts",
     "test:dist": "npm run build && node --loader ts-node/esm tests/test-runner.ts",
     "test:range": "npm run build && node --loader ts-node/esm tests/range-state-vector.test.ts",
+    "test:vector-fuzzy": "npm run build && node --loader ts-node/esm tests/vector-fuzzy.test.ts",
     "example": "npm run build && node --loader ts-node/esm examples/basic-usage.ts",
     "prepublishOnly": "npm run build"
   },
