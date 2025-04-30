@@ -17,7 +17,8 @@ export function fuzzyTest(treesCount: number = 3, tries: number = 10, movesPerTr
   for (let i = 0; i < tries; i++) {
     console.log(`🧪 Starting try ${i + 1}...`);
 
-    randomMovesAndProps(trees, movesPerTry);
+    // Use delayed sync instead of immediate sync
+    randomMovesAndPropsWithDelayedSync(trees, movesPerTry);
 
     // Check if all trees have the same structure
     console.log(`Verifying trees have the same structure...`);
@@ -35,6 +36,7 @@ export function fuzzyTest(treesCount: number = 3, tries: number = 10, movesPerTr
   return trees;
 }
 
+// Original function with immediate sync after each operation
 function randomMovesAndProps(trees: RepTree[], maxMoves: number = 1000): void {
   const treeCount = trees.length;
 
@@ -53,6 +55,57 @@ function randomMovesAndProps(trees: RepTree[], maxMoves: number = 1000): void {
     const ops = tree.getAllOps();
     for (let j = 0; j < treeCount; j++) {
       if (j !== treeIndex) {
+        trees[j].merge(ops);
+      }
+    }
+  }
+}
+
+// New function with delayed synchronization
+function randomMovesAndPropsWithDelayedSync(trees: RepTree[], maxMoves: number = 1000): void {
+  const treeCount = trees.length;
+  const actionsPerBatch = Math.max(10, Math.floor(maxMoves / 10)); // Split into ~10 batches
+  const batches = Math.ceil(maxMoves / actionsPerBatch);
+  
+  console.log(`Executing ${maxMoves} actions in ${batches} batches (${actionsPerBatch} actions per batch)`);
+  
+  for (let batch = 0; batch < batches; batch++) {
+    console.log(`Batch ${batch + 1}/${batches}: Executing random actions...`);
+    const actualBatchSize = Math.min(actionsPerBatch, maxMoves - (batch * actionsPerBatch));
+    
+    // Each tree performs actions independently
+    for (let treeIndex = 0; treeIndex < treeCount; treeIndex++) {
+      const tree = trees[treeIndex];
+      const actionsThisBatch = Math.ceil(actualBatchSize / treeCount);
+      console.log(`  Tree ${treeIndex + 1} executing ${actionsThisBatch} actions`);
+      
+      for (let i = 0; i < actionsThisBatch; i++) {
+        // Pick a random action
+        const actionType = pickRandomAction();
+        
+        // Execute the action
+        executeRandomAction(tree, actionType);
+      }
+    }
+    
+    // After all trees have performed their actions, sync them
+    console.log(`Batch ${batch + 1}/${batches}: Synchronizing trees...`);
+    synchronizeTrees(trees);
+  }
+}
+
+// Function to synchronize all trees (similar to vector-fuzzy.test.ts)
+function synchronizeTrees(trees: RepTree[]): void {
+  const treeCount = trees.length;
+  
+  // For each tree, get ops and apply to all other trees
+  for (let i = 0; i < treeCount; i++) {
+    const sourceTree = trees[i];
+    const ops = sourceTree.getAllOps();
+    
+    for (let j = 0; j < treeCount; j++) {
+      if (i !== j) {
+        console.log(`  Syncing ops from Tree ${i + 1} to Tree ${j + 1}`);
         trees[j].merge(ops);
       }
     }

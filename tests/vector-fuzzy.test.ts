@@ -133,6 +133,74 @@ function synchronizeTrees(trees: RepTree[]): number {
 function verifyTreeStructures(trees: RepTree[]): void {
   for (let i = 1; i < trees.length; i++) {
     const areEqual = trees[0].compareStructure(trees[i]);
+    if (!areEqual) {
+      // Gather diagnostic information
+      console.error(`\n🔍 DIVERGENCE DETECTED between Tree 1 and Tree ${i+1}`);
+      
+      // Compare vertex counts
+      const tree1VertexCount = trees[0].getAllVertices().length;
+      const tree2VertexCount = trees[i].getAllVertices().length;
+      console.error(`Vertex counts: Tree 1 has ${tree1VertexCount}, Tree ${i+1} has ${tree2VertexCount}`);
+      
+      // Check root vertex properties
+      const root1Props = trees[0].getVertexProperties(trees[0].rootVertexId);
+      const root2Props = trees[i].getVertexProperties(trees[i].rootVertexId);
+      console.error(`Root properties count: Tree 1 root has ${root1Props.length}, Tree ${i+1} root has ${root2Props.length}`);
+      
+      // Check children counts of root
+      const root1Children = trees[0].getChildrenIds(trees[0].rootVertexId);
+      const root2Children = trees[i].getChildrenIds(trees[i].rootVertexId);
+      console.error(`Root children count: Tree 1 root has ${root1Children.length}, Tree ${i+1} root has ${root2Children.length}`);
+      
+      // Find vertex IDs in one tree but not the other
+      const tree1VertexIds = new Set(trees[0].getAllVertices().map(v => v.id));
+      const tree2VertexIds = new Set(trees[i].getAllVertices().map(v => v.id));
+      
+      const onlyInTree1 = [...tree1VertexIds].filter(id => !tree2VertexIds.has(id));
+      const onlyInTree2 = [...tree2VertexIds].filter(id => !tree1VertexIds.has(id));
+      
+      if (onlyInTree1.length > 0) {
+        console.error(`Vertices only in Tree 1: ${onlyInTree1.length} (first 5: ${onlyInTree1.slice(0, 5).join(', ')})`);
+      }
+      
+      if (onlyInTree2.length > 0) {
+        console.error(`Vertices only in Tree ${i+1}: ${onlyInTree2.length} (first 5: ${onlyInTree2.slice(0, 5).join(', ')})`);
+      }
+      
+      // If we have the same vertices but different structure, find parent differences
+      if (onlyInTree1.length === 0 && onlyInTree2.length === 0) {
+        console.error(`Trees have identical vertices but different structure. Checking parent relationships...`);
+        
+        // Sample up to 10 vertices to check their parents
+        const sampleSize = Math.min(10, tree1VertexIds.size);
+        const sampleVertices = [...tree1VertexIds].slice(0, sampleSize);
+        
+        for (const vertexId of sampleVertices) {
+          const parent1 = trees[0].getParent(vertexId)?.id;
+          const parent2 = trees[i].getParent(vertexId)?.id;
+          
+          if (parent1 !== parent2) {
+            console.error(`Vertex ${vertexId} has different parents: Tree 1: ${parent1}, Tree ${i+1}: ${parent2}`);
+          }
+        }
+      }
+      
+      // Output state vector information
+      console.error(`\nState Vector Tree 1:`, JSON.stringify(trees[0].getStateVector()));
+      console.error(`State Vector Tree ${i+1}:`, JSON.stringify(trees[i].getStateVector()));
+      
+      // Check last operation counts
+      console.error(`\nTotal operations in Tree 1:`, trees[0].getAllOps().length);
+      console.error(`Total operations in Tree ${i+1}:`, trees[i].getAllOps().length);
+      
+      // Suggest potential issues
+      console.error(`\nPossible issues to investigate:`);
+      console.error(`- Check if all operations were properly transferred between trees`);
+      console.error(`- Look for race conditions in conflict resolution`);
+      console.error(`- Examine cycles in tree structure that might affect isAncestor checks`);
+      console.error(`- Inspect operation ordering during merge operations`);
+    }
+    
     assert(areEqual, `Tree 1 and Tree ${i+1} structures differ after synchronization`);
   }
 }
