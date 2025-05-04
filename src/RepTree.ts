@@ -47,10 +47,10 @@ export class RepTree {
   constructor(peerId: string, ops: ReadonlyArray<VertexOperation> | null = null) {
     this.peerId = peerId;
     this.state = new TreeState();
-    
+
     // Initialize state vector (enabled by default)
     this.stateVector = new StateVector();
-    
+
     if (ops != null && ops.length > 0) {
       this.applyOps(ops);
 
@@ -644,11 +644,11 @@ export class RepTree {
 
   private reportOpAsApplied(op: VertexOperation) {
     this.knownOps.add(op.id.toString());
-    
+
     if (this._stateVectorEnabled) {
       this.stateVector.updateFromOp(op);
     }
-    
+
     for (const callback of this.opAppliedCallbacks) {
       callback(op);
     }
@@ -722,10 +722,10 @@ export class RepTree {
     if (!this._stateVectorEnabled) {
       return [...this.moveOps, ...this.setPropertyOps];
     }
-    
+
     // Create a StateVector instance from their state vector
     const otherStateVector = new StateVector(theirStateVector);
-    
+
     // Get the missing ranges
     const missingRanges = this.stateVector.diff(otherStateVector);
 
@@ -765,7 +765,7 @@ export class RepTree {
    */
   set stateVectorEnabled(value: boolean) {
     if (value === this._stateVectorEnabled) return;
-    
+
     if (value) {
       // Enable state vector and rebuild from existing operations
       this._stateVectorEnabled = true;

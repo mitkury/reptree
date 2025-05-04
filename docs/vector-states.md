@@ -2,7 +2,7 @@
 
 ## Overview
 
-RepTree uses range-based state vectors to efficiently track which operations have been applied across peers. This approach allows for compact representation of operation history and optimized synchronization by identifying only the missing operations that need to be transferred.
+RepTree uses range-based state vectors to track which operations have been applied across peers. This approach allows for compact representation of operation history and optimized synchronization by identifying only the missing operations that need to be transferred.
 
 ## Implementation
 
@@ -16,6 +16,8 @@ A state vector is represented as a mapping from peer IDs to arrays of ranges:
 ```
 
 Each range `[start, end]` represents a continuous sequence of operations with counters from `start` to `end` (inclusive) that have been applied from that peer.
+
+RepTree encapsulates this functionality in a dedicated `StateVector` class that handles all state vector operations, providing a clean interface for the rest of the system.
 
 ### Key Algorithms
 
@@ -38,7 +40,7 @@ The system includes a `subtractRanges` helper function that calculates the set d
 
 To determine what operations to send during synchronization:
 
-1. Calculate missing ranges using `diffStateVectors`, which uses `subtractRanges` to identify ranges one peer has that the other doesn't
+1. Calculate missing ranges by comparing state vectors to identify ranges one peer has that the other doesn't
 2. Filter all operations to find those falling within these missing ranges
 3. Sort the resulting operations to ensure causal order preservation
 
@@ -48,6 +50,7 @@ To determine what operations to send during synchronization:
 2. **Efficient Synchronization**: Only missing operations are transferred between peers
 3. **Handles Gaps**: Non-contiguous operations are efficiently represented as separate ranges
 4. **Incremental Updates**: State vectors are maintained in real-time as operations are applied
+5. **Modular Design**: Separation of concerns with a dedicated StateVector class
 
 ## Synchronization Protocol
 
@@ -56,4 +59,12 @@ To determine what operations to send during synchronization:
 3. Peer B sends only the missing operations to Peer A
 4. Peer A applies these operations, automatically updating its state vector
 
-This approach minimizes network usage and ensures efficient operation transfer during synchronization. 
+This approach minimizes network usage and ensures efficient operation transfer during synchronization.
+
+## Usage in RepTree
+
+The state vector functionality in RepTree:
+
+- Is enabled by default
+- Can be toggled on/off with the `stateVectorEnabled` property
+- Will automatically rebuild from existing operations when re-enabled
