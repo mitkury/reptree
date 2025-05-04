@@ -75,12 +75,12 @@ describe('RepTree Fuzzy Testing', () => {
    * If this test fails, it's documenting a known limitation rather than a bug.
    * In real-world scenarios, operation delivery often preserves some causal ordering.
    */
-  test.skip('causal dependency test: should handle out-of-order operations with shuffled merges', () => {
+  test('causal dependency test: should handle out-of-order operations with shuffled merges', () => {
     console.log('Starting fuzzy test with shuffled operations...');
     const treesCount = 3;
     // Using smaller values to make diagnosis easier
-    const rounds = 2;
-    const actionsPerRound = 100;
+    const rounds = 5;
+    const actionsPerRound = 500;
     
     let totalOperations = 0;
     
