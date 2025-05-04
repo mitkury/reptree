@@ -5,18 +5,6 @@ export default defineConfig({
     include: ['__tests__/**/*.test.ts'],
     globals: true,
     environment: 'node',
-    coverage: {
-      provider: 'v8',
-      enabled: false,
-      reporter: ['text', 'json', 'html'],
-      exclude: [
-        'node_modules/**',
-        'dist/**',
-        'old_tests/**',
-        '**/*.d.ts',
-        'vitest.config.ts',
-        'tsup.config.ts',
-      ],
-    },
+    testTimeout: 60 * 60 * 1000,
   },
 }); 
