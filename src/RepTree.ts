@@ -5,71 +5,9 @@ import { TreeState } from "./TreeState";
 import { OpId } from "./OpId";
 import uuid from "./uuid";
 import { Vertex } from './Vertex';
+import { StateVector } from './StateVector';
 
 type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
-
-/**
- * Helper function to subtract one set of ranges from another.
- * Returns the ranges in A that are not in B.
- * Assumes ranges in both A and B are sorted and non-overlapping.
- */
-function subtractRanges(rangesA: number[][], rangesB: number[][]): number[][] {
-  if (rangesB.length === 0) return rangesA.map(r => [...r]); // Return a copy
-  if (rangesA.length === 0) return []; // If A is empty, nothing to subtract
-
-  const result: number[][] = [];
-  let indexB = 0;
-
-  for (const rangeA of rangesA) {
-    let currentStart = rangeA[0];
-    const endA = rangeA[1];
-
-    // Iterate through ranges in B that could potentially overlap with rangeA
-    while (indexB < rangesB.length && rangesB[indexB][1] < currentStart) {
-      // Skip ranges in B that are entirely before the current start
-      indexB++;
-    }
-
-    while (indexB < rangesB.length && rangesB[indexB][0] <= endA) {
-      const startB = rangesB[indexB][0];
-      const endB = rangesB[indexB][1];
-
-      // If there's a gap before this range in B starts
-      if (currentStart < startB) {
-        // Add the portion of rangeA before the overlap
-        result.push([currentStart, Math.min(endA, startB - 1)]);
-      }
-
-      // Move current start past this range in B
-      currentStart = Math.max(currentStart, endB + 1);
-
-      // If we've gone past the end of rangeA, break inner loop
-      if (currentStart > endA) break;
-
-      // If the current rangeB ends after rangeA, we don't need to check further ranges in B for this rangeA
-      if (endB >= endA) break;
-
-      // Only advance indexB if the current rangeB is fully processed relative to currentStart
-      // Advance indexB if the end of the current B range is before the new currentStart
-      if (endB < currentStart) {
-        indexB++;
-      }
-      // If the start of the current B range is greater than or equal to currentStart, 
-      // it means this B range has been processed for the current segment of A, so move to the next B range.
-      else if (startB >= currentStart) {
-        indexB++;
-      }
-    }
-
-    // If there's a remaining part of rangeA after processing overlaps with B
-    if (currentStart <= endA) {
-      result.push([currentStart, endA]);
-    }
-  }
-
-  return result;
-}
-
 
 /**
  * RepTree is a tree data structure for storing vertices with properties.
@@ -99,7 +37,8 @@ export class RepTree {
   private maxDepth = RepTree.DEFAULT_MAX_DEPTH;
 
   // State vector tracking operations from each peer
-  private stateVector: Record<string, number[][]> = {};
+  private stateVector: StateVector;
+  private _stateVectorEnabled: boolean = true;
 
   /**
    * @param peerId - The peer ID of the current client
@@ -108,7 +47,10 @@ export class RepTree {
   constructor(peerId: string, ops: ReadonlyArray<VertexOperation> | null = null) {
     this.peerId = peerId;
     this.state = new TreeState();
-
+    
+    // Initialize state vector (enabled by default)
+    this.stateVector = new StateVector();
+    
     if (ops != null && ops.length > 0) {
       this.applyOps(ops);
 
@@ -702,7 +644,11 @@ export class RepTree {
 
   private reportOpAsApplied(op: VertexOperation) {
     this.knownOps.add(op.id.toString());
-    this.updateStateVector(op); // Call the method correctly
+    
+    if (this._stateVectorEnabled) {
+      this.stateVector.updateFromOp(op);
+    }
+    
     for (const callback of this.opAppliedCallbacks) {
       callback(op);
     }
@@ -754,131 +700,14 @@ export class RepTree {
   // --- Range-Based State Vector Methods --- 
 
   /**
-   * Updates the state vector with a newly applied operation.
-   * Assumes ranges are sorted and non-overlapping.
-   * 
-   * @param op The operation that was just applied
-   */
-  private updateStateVector(op: VertexOperation): void {
-    const peerId = op.id.peerId;
-    const counter = op.id.counter;
-
-    // Initialize ranges array for this peer if it doesn't exist
-    if (!this.stateVector[peerId]) {
-      this.stateVector[peerId] = [];
-    }
-
-    const ranges = this.stateVector[peerId];
-
-    // Case 1: No ranges yet
-    if (ranges.length === 0) {
-      ranges.push([counter, counter]);
-      return;
-    }
-
-    let rangeExtendedOrMerged = false;
-    let insertIndex = -1;
-
-    for (let i = 0; i < ranges.length; i++) {
-      const range = ranges[i];
-
-      // If counter is already in a range, do nothing
-      if (counter >= range[0] && counter <= range[1]) {
-        rangeExtendedOrMerged = true;
-        break;
-      }
-
-      // If counter is one less than range start, extend range start
-      if (counter === range[0] - 1) {
-        range[0] = counter;
-        rangeExtendedOrMerged = true;
-        // Check if this range now merges with the previous range
-        if (i > 0 && range[0] === ranges[i - 1][1] + 1) {
-          ranges[i - 1][1] = range[1]; // Merge into previous
-          ranges.splice(i, 1); // Remove current
-        }
-        break;
-      }
-
-      // If counter is one more than range end, extend range end
-      if (counter === range[1] + 1) {
-        range[1] = counter;
-        rangeExtendedOrMerged = true;
-        // Check if this range now merges with the next range
-        if (i < ranges.length - 1 && range[1] + 1 === ranges[i + 1][0]) {
-          range[1] = ranges[i + 1][1]; // Merge next into current
-          ranges.splice(i + 1, 1); // Remove next
-        }
-        break;
-      }
-
-      // Keep track of where to insert if no extension/merge happens
-      if (counter < range[0] && insertIndex === -1) {
-        insertIndex = i;
-      }
-    }
-
-    // If we couldn't extend or merge any range, add a new one
-    if (!rangeExtendedOrMerged) {
-      if (insertIndex === -1) {
-        // If counter is greater than all existing ranges, add to the end
-        insertIndex = ranges.length;
-      }
-      ranges.splice(insertIndex, 0, [counter, counter]);
-      // After inserting, check if the new range merges with neighbors
-      // Merge with previous range if possible
-      if (insertIndex > 0 && ranges[insertIndex][0] === ranges[insertIndex - 1][1] + 1) {
-        ranges[insertIndex - 1][1] = ranges[insertIndex][1];
-        ranges.splice(insertIndex, 1);
-        insertIndex--; // Adjust index after merging
-      }
-      // Merge with next range if possible (use adjusted insertIndex)
-      if (insertIndex < ranges.length - 1 && ranges[insertIndex][1] + 1 === ranges[insertIndex + 1][0]) {
-        ranges[insertIndex][1] = ranges[insertIndex + 1][1];
-        ranges.splice(insertIndex + 1, 1);
-      }
-    }
-  }
-
-  /**
    * Returns the current state vector.
    * Returns a readonly reference to the internal state vector.
    */
-  getStateVector(): Readonly<Record<string, number[][]>> {
-    return this.stateVector;
-  }
-
-  /**
-   * Calculates which operation ranges we have that the other peer is missing
-   * by comparing state vectors.
-   * 
-   * @param theirStateVector The state vector from another peer
-   * @returns Array of operation ID ranges that we have but they don't
-   */
-  private diffStateVectors(theirStateVector: Record<string, number[][]>): OpIdRange[] {
-    const missingRanges: OpIdRange[] = [];
-
-    // Check what we have that they don't have
-    for (const [peerId, ourRanges] of Object.entries(this.stateVector)) {
-      const theirRanges = theirStateVector[peerId] || [];
-
-      // Calculate ranges we have that they don't
-      const missing = subtractRanges(ourRanges, theirRanges);
-
-      // Convert to OpIdRange format
-      for (const [start, end] of missing) {
-        // Ensure the range is valid (start <= end)
-        if (start <= end) {
-          missingRanges.push({
-            peerId,
-            start,
-            end
-          });
-        }
-      }
+  getStateVector(): Readonly<Record<string, number[][]>> | null {
+    if (!this._stateVectorEnabled) {
+      return null;
     }
-
-    return missingRanges;
+    return this.stateVector.getState();
   }
 
   /**
@@ -889,8 +718,16 @@ export class RepTree {
    * @returns Operations that should be sent to the other peer, sorted by OpId.
    */
   getMissingOps(theirStateVector: Record<string, number[][]>): VertexOperation[] {
-    // First, identify the missing operation ranges by comparing state vectors
-    const missingRanges = this.diffStateVectors(theirStateVector);
+    // If state vector is disabled, fallback to sending all ops
+    if (!this._stateVectorEnabled) {
+      return [...this.moveOps, ...this.setPropertyOps];
+    }
+    
+    // Create a StateVector instance from their state vector
+    const otherStateVector = new StateVector(theirStateVector);
+    
+    // Get the missing ranges
+    const missingRanges = this.stateVector.diff(otherStateVector);
 
     // Then, retrieve only the operations that fall within those ranges
     const missingOps: VertexOperation[] = [];
@@ -913,6 +750,31 @@ export class RepTree {
     missingOps.sort((a, b) => OpId.compare(a.id, b.id));
 
     return missingOps;
+  }
+
+  /**
+   * Gets or sets whether state vector tracking is enabled
+   */
+  get stateVectorEnabled(): boolean {
+    return this._stateVectorEnabled;
+  }
+
+  /**
+   * Sets the state vector enabled status
+   * When enabled, rebuilds the state vector from existing operations if needed
+   */
+  set stateVectorEnabled(value: boolean) {
+    if (value === this._stateVectorEnabled) return;
+    
+    if (value) {
+      // Enable state vector and rebuild from existing operations
+      this._stateVectorEnabled = true;
+      this.stateVector = StateVector.fromOperations([...this.moveOps, ...this.setPropertyOps]);
+    } else {
+      // Disable state vector and clear it to save memory
+      this._stateVectorEnabled = false;
+      this.stateVector = new StateVector();
+    }
   }
 }
 
