@@ -59,6 +59,15 @@ describe('RepTree Structure Comparison', () => {
     // Verify structures are identical
     expect(originalTree.compareStructure(duplicateTree)).toBe(true);
     
+    // Compare string representations
+    const originalStr = originalTree.printTree();
+    const duplicateStr = duplicateTree.printTree();
+    console.log('Original tree structure:');
+    console.log(originalStr);
+    console.log('Duplicate tree structure:');
+    console.log(duplicateStr);
+    expect(originalStr).toBe(duplicateStr);
+    
     // Additional verification of vertices count
     expect(duplicateTree.getAllVertices().length).toBe(originalTree.getAllVertices().length);
   });
@@ -80,6 +89,11 @@ describe('RepTree Structure Comparison', () => {
     // Verify structures are identical before the extra operation
     expect(originalTree.compareStructure(duplicateTree)).toBe(true);
     
+    // Compare string representations
+    const originalStr = originalTree.printTree();
+    const duplicateStr = duplicateTree.printTree();
+    expect(originalStr).toBe(duplicateStr);
+    
     // Add one more operation to the duplicate tree
     const duplicateDocs = duplicateTree.getVertex(docsFolder.id)!;
     duplicateDocs.newNamedChild('NewFile.md');
@@ -87,11 +101,25 @@ describe('RepTree Structure Comparison', () => {
     // Verify structures are now different
     expect(originalTree.compareStructure(duplicateTree)).toBe(false);
     
+    // Compare string representations again
+    const originalStrAfter = originalTree.printTree();
+    const duplicateStrAfter = duplicateTree.printTree();
+    console.log('Original tree after:');
+    console.log(originalStrAfter);
+    console.log('Duplicate tree after:');
+    console.log(duplicateStrAfter);
+    expect(originalStrAfter).not.toBe(duplicateStrAfter);
+    
     // Sync the original tree to match the duplicate
     originalTree.merge(duplicateTree.getAllOps());
     
     // Verify structures are identical again after syncing
     expect(originalTree.compareStructure(duplicateTree)).toBe(true);
+    
+    // Compare string representations after sync
+    const originalStrSync = originalTree.printTree();
+    const duplicateStrSync = duplicateTree.printTree();
+    expect(originalStrSync).toBe(duplicateStrSync);
   });
   
   test('duplicate from quick fuzzy test should have identical structure', () => {
@@ -108,10 +136,23 @@ describe('RepTree Structure Comparison', () => {
     const duplicateTree = new RepTree('duplicate');
     duplicateTree.merge(originalTree.getAllOps());
     
-    // Verify structures are identical
+    // Verify structures are identical using compareStructure
     expect(originalTree.compareStructure(duplicateTree)).toBe(true);
     
-    // Additional verification of vertex properties
+    // Get string representations
+    const originalStr = originalTree.printTree();
+    const duplicateStr = duplicateTree.printTree();
+    
+    // Print the string representations with truncation for diagnostic purposes
+    console.log('Original tree structure (fuzzy test):');
+    console.log(originalStr.substring(0, 500) + '...');
+    console.log('Duplicate tree structure (fuzzy test):');
+    console.log(duplicateStr.substring(0, 500) + '...');
+    
+    // Now that we've fixed the sorting in printTree, the string representations should be identical
+    expect(originalStr).toBe(duplicateStr);
+    
+    // Additional verification of vertices count
     expect(duplicateTree.getAllVertices().length).toBe(originalTree.getAllVertices().length);
   });
   
@@ -141,11 +182,24 @@ describe('RepTree Structure Comparison', () => {
     printTreeStructure('Tree A', treeA);
     printTreeStructure('Tree B', treeB);
     
+    // Get string representations for comparison
+    const treeAString = treeA.printTree();
+    const treeBString = treeB.printTree();
+    
+    console.log('\nTree A string representation:');
+    console.log(treeAString);
+    console.log('\nTree B string representation:');
+    console.log(treeBString);
+    
     // Verify trees have different structures due to different root IDs
     // even though they have the same logical structure
     console.log('\nComparing structures:');
     console.log(`Tree A and B match: ${treeA.compareStructure(treeB)}`);
     expect(treeA.compareStructure(treeB)).toBe(false);
+    
+    // Despite having same logical structure, the string representations
+    // will be different because they contain different IDs
+    expect(treeAString).not.toBe(treeBString);
     
     // Verify both trees have the same number of vertices
     expect(treeA.getAllVertices().length).toBe(treeB.getAllVertices().length);
@@ -158,6 +212,8 @@ describe('RepTree Structure Comparison', () => {
     // The merged tree will have both root vertices and their children
     console.log('\n===== MERGED TREE =====');
     printTreeStructure('Merged Tree', mergedTree);
+    console.log('\nMerged Tree string representation:');
+    console.log(mergedTree.printTree());
     
     // Verify that the merged tree contains more vertices than the individual trees
     // since it has both trees' root vertices and their children
@@ -176,6 +232,19 @@ describe('RepTree Structure Comparison', () => {
     console.log(`Tree A and merged tree match: ${treeA.compareStructure(mergedTree)}`);
     console.log(`Tree B and merged tree match: ${treeB.compareStructure(mergedTree)}`);
     console.log(`Tree A and Tree B match: ${treeA.compareStructure(treeB)}`);
+    
+    // Get final string representations
+    const treeAFinalString = treeA.printTree();
+    const treeBFinalString = treeB.printTree();
+    const mergedTreeFinalString = mergedTree.printTree();
+    
+    console.log('\nFinal string comparison:');
+    console.log('Tree A:');
+    console.log(treeAFinalString);
+    console.log('Tree B:');
+    console.log(treeBFinalString);
+    console.log('Merged Tree:');
+    console.log(mergedTreeFinalString);
     
     // Document behavior: Trees with different roots will never have identical structures
     // even after merging operations because their roots remain different

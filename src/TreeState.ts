@@ -242,10 +242,32 @@ export class TreeState {
       }
     }
 
+    // Get children and sort them for deterministic output
     const children = this.getChildrenIds(vertexId);
-    for (let i = 0; i < children.length; i++) {
-      const childId = children[i];
-      const isLastChild = i === children.length - 1;
+    const sortedChildren = [...children].sort((a, b) => {
+      // Sort by name if available
+      const vertexA = this.getVertex(a);
+      const vertexB = this.getVertex(b);
+      
+      const nameA = vertexA?.getProperty('_n') as string | undefined;
+      const nameB = vertexB?.getProperty('_n') as string | undefined;
+      
+      // If both have names, compare them
+      if (nameA && nameB) {
+        return nameA.localeCompare(nameB);
+      }
+      
+      // If only one has a name, prioritize the one with a name
+      if (nameA) return -1;
+      if (nameB) return 1;
+      
+      // Fall back to sorting by ID for consistent output
+      return a.localeCompare(b);
+    });
+    
+    for (let i = 0; i < sortedChildren.length; i++) {
+      const childId = sortedChildren[i];
+      const isLastChild = i === sortedChildren.length - 1;
       result += this.printTree(childId, indent + (isLast ? "    " : "│   "), isLastChild);
     }
 
