@@ -26,6 +26,7 @@
     "test:basic": "vitest run basic-usage",
     "test:fuzzy": "vitest run fuzzy",
     "test:vector": "vitest run state-vector-sync",
+    "test:comparison": "vitest run comparison",
     "test:coverage": "vitest run --coverage",
     "example": "npm run build && node --loader ts-node/esm examples/basic-usage.ts",
     "prepublishOnly": "npm run build"
