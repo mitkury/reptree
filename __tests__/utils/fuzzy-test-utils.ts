@@ -160,13 +160,111 @@ export function verifyTreeStructures(trees: RepTree[]): void {
   for (let i = 1; i < trees.length; i++) {
     const areEqual = trees[0].compareStructure(trees[i]);
     if (!areEqual) {
-      // For diagnostic purposes, log some information about the divergence
+      // For diagnostic purposes, log detailed information about the divergence
       console.error(`\n🔍 DIVERGENCE DETECTED between Tree 1 and Tree ${i+1}`);
       
       // Compare vertex counts
       const tree1VertexCount = trees[0].getAllVertices().length;
       const tree2VertexCount = trees[i].getAllVertices().length;
       console.error(`Vertex counts: Tree 1 has ${tree1VertexCount}, Tree ${i+1} has ${tree2VertexCount}`);
+      
+      // Find and report structural differences
+      const tree1Vertices = trees[0].getAllVertices();
+      const tree2Vertices = trees[i].getAllVertices();
+      
+      // Check for vertices present in tree1 but not in tree2
+      const tree2VertexIds = new Set(tree2Vertices.map(v => v.id));
+      const missingInTree2 = tree1Vertices.filter(v => !tree2VertexIds.has(v.id));
+      if (missingInTree2.length > 0) {
+        console.error(`Vertices present in Tree 1 but missing in Tree ${i+1}:`, 
+          missingInTree2.map(v => v.id).slice(0, 5).join(', ') + 
+          (missingInTree2.length > 5 ? ` and ${missingInTree2.length - 5} more...` : ''));
+      }
+      
+      // Check for vertices present in tree2 but not in tree1
+      const tree1VertexIds = new Set(tree1Vertices.map(v => v.id));
+      const missingInTree1 = tree2Vertices.filter(v => !tree1VertexIds.has(v.id));
+      if (missingInTree1.length > 0) {
+        console.error(`Vertices present in Tree ${i+1} but missing in Tree 1:`, 
+          missingInTree1.map(v => v.id).slice(0, 5).join(', ') + 
+          (missingInTree1.length > 5 ? ` and ${missingInTree1.length - 5} more...` : ''));
+      }
+      
+      // Check for vertices with different parents
+      const commonVertices = tree1Vertices.filter(v => tree2VertexIds.has(v.id));
+      const verticesWithDifferentParents = commonVertices.filter(v1 => {
+        const v2 = trees[i].getVertex(v1.id);
+        return v2 && v1.parentId !== v2.parentId;
+      });
+      
+      if (verticesWithDifferentParents.length > 0) {
+        console.error(`Vertices with different parents between Tree 1 and Tree ${i+1}:`);
+        verticesWithDifferentParents.slice(0, 5).forEach(v1 => {
+          const v2 = trees[i].getVertex(v1.id);
+          if (v2) {
+            console.error(`  Vertex ${v1.id}: parent in Tree 1 = ${v1.parentId}, parent in Tree ${i+1} = ${v2.parentId}`);
+          }
+        });
+        if (verticesWithDifferentParents.length > 5) {
+          console.error(`  ... and ${verticesWithDifferentParents.length - 5} more`);
+        }
+      }
+      
+      // Check for vertices with different properties
+      const verticesWithDifferentProps = commonVertices.filter(v1 => {
+        const v2 = trees[i].getVertex(v1.id);
+        if (!v2) return false;
+        
+        const props1 = trees[0].getVertexProperties(v1.id);
+        const props2 = trees[i].getVertexProperties(v2.id);
+        
+        if (props1.length !== props2.length) return true;
+        
+        for (const prop1 of props1) {
+          const prop2 = props2.find(p => p.key === prop1.key);
+          if (!prop2 || prop1.value !== prop2.value) return true;
+        }
+        
+        return false;
+      });
+      
+      if (verticesWithDifferentProps.length > 0) {
+        console.error(`Vertices with different properties between Tree 1 and Tree ${i+1}:`);
+        verticesWithDifferentProps.slice(0, 5).forEach(v1 => {
+          const v2 = trees[i].getVertex(v1.id);
+          if (v2) {
+            const props1 = trees[0].getVertexProperties(v1.id);
+            const props2 = trees[i].getVertexProperties(v2.id);
+            
+            console.error(`  Vertex ${v1.id} properties:`);
+            console.error(`    Tree 1: ${JSON.stringify(props1)}`);
+            console.error(`    Tree ${i+1}: ${JSON.stringify(props2)}`);
+            
+            // Find specific property differences
+            const allKeys = new Set([...props1.map(p => p.key), ...props2.map(p => p.key)]);
+            for (const key of allKeys) {
+              const p1 = props1.find(p => p.key === key);
+              const p2 = props2.find(p => p.key === key);
+              
+              if (!p1) {
+                console.error(`    Property "${key}" only in Tree ${i+1}: ${p2?.value}`);
+              } else if (!p2) {
+                console.error(`    Property "${key}" only in Tree 1: ${p1.value}`);
+              } else if (p1.value !== p2.value) {
+                console.error(`    Property "${key}" differs: Tree 1 = ${p1.value}, Tree ${i+1} = ${p2.value}`);
+              }
+            }
+          }
+        });
+        if (verticesWithDifferentProps.length > 5) {
+          console.error(`  ... and ${verticesWithDifferentProps.length - 5} more`);
+        }
+      }
+      
+      // Check if their root vertices differ
+      if (trees[0].root?.id !== trees[i].root?.id) {
+        console.error(`Root vertices differ: Tree 1 root = ${trees[0].root?.id}, Tree ${i+1} root = ${trees[i].root?.id}`);
+      }
       
       throw new Error(`Tree 1 and Tree ${i+1} structures differ after synchronization`);
     }
