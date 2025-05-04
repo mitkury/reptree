@@ -41,17 +41,17 @@ export class RepTree {
   private _stateVectorEnabled: boolean = true;
 
   /**
-   * @param peerId - The peer ID of the current client
-   * @param ops - The operations to replicate an existing tree, if null - a new tree will be created
+   * @param peerId - The peer ID of the current client. Should be unique across all peers.
+   * @param ops - The operations to replicate an existing tree, if not provided - an empty tree will be created without a root vertex
    */
-  constructor(peerId: string, ops: ReadonlyArray<VertexOperation> | null = null) {
+  constructor(peerId: string, ops?: ReadonlyArray<VertexOperation>) {
     this.peerId = peerId;
     this.state = new TreeState();
 
     // Initialize state vector (enabled by default)
     this.stateVector = new StateVector();
 
-    if (ops != null && ops.length > 0) {
+    if (ops && ops.length > 0) {
       this.applyOps(ops);
 
       const root = this.root;
