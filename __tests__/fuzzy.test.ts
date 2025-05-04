@@ -78,7 +78,6 @@ describe('RepTree Fuzzy Testing', () => {
   test('causal dependency test: should handle out-of-order operations with shuffled merges', () => {
     console.log('Starting fuzzy test with shuffled operations...');
     const treesCount = 3;
-    // Using smaller values to make diagnosis easier
     const rounds = 5;
     const actionsPerRound = 500;
     
@@ -152,9 +151,9 @@ describe('RepTree Fuzzy Testing', () => {
    */
   test('should handle interleaved operations from different peers', () => {
     console.log('Starting fuzzy test with interleaved peer operations...');
-    const treesCount = 3;
-    const rounds = 3;
-    const actionsPerRound = 300;
+    const treesCount = 5;
+    const rounds = 5;
+    const actionsPerRound = 500;
     
     let totalOperations = 0;
     
