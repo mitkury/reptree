@@ -20,13 +20,13 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "npm run test:dist",
-    "test:src": "node --loader ts-node/esm tests/test-runner.ts",
-    "test:dist": "npm run build && node --loader ts-node/esm tests/test-runner.ts",
-    "test:range": "npm run build && node --loader ts-node/esm tests/range-state-vector.test.ts",
-    "test:vector-fuzzy": "npm run build && node --loader ts-node/esm tests/vector-fuzzy.test.ts",
-    "test:compare-sync": "npm run build && node --loader ts-node/esm tests/compare-sync-methods.ts",
-    "test:all-fuzzy": "npm run build && node --loader ts-node/esm tests/run-all-fuzzy-tests.ts",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "test:basic": "vitest run basic-usage",
+    "test:fuzzy": "vitest run fuzzy",
+    "test:vector": "vitest run state-vector-sync",
+    "test:coverage": "vitest run --coverage",
     "example": "npm run build && node --loader ts-node/esm examples/basic-usage.ts",
     "prepublishOnly": "npm run build"
   },
@@ -49,6 +49,7 @@
   "devDependencies": {
     "ts-node": "^10.9.1",
     "tsup": "^8.0.1",
-    "typescript": "^5.2.2"
+    "typescript": "^5.2.2",
+    "vitest": "^1.0.0"
   }
 }
