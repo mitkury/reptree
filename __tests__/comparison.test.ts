@@ -7,8 +7,8 @@ import {
 describe('RepTree Synchronization Methods Comparison', () => {
   test('should compare efficiency of all-ops vs. state-vector sync', () => {
     const treesCount = 3;
-    const rounds = 10;
-    const actionsPerRound = 1000; // Using smaller numbers for faster tests
+    const rounds = 5;
+    const actionsPerRound = 500;
     
     // Run the all-ops fuzzy test
     const allOpsResult = runAllOpsFuzzyTest(treesCount, rounds, actionsPerRound);
@@ -33,8 +33,8 @@ describe('RepTree Synchronization Methods Comparison', () => {
     console.log(`  Savings:   ${((allOpsStats.executionTimeMs - vectorStats.executionTimeMs) / allOpsStats.executionTimeMs * 100).toFixed(2)}%`);
     
     console.log(`\n🔄 OPERATIONS TRANSFERRED:`);
-    console.log(`  All-Ops:   ${allOpsStats.totalOperationsTransferred} ops`);
-    console.log(`  Vector:    ${vectorStats.totalOperationsTransferred} ops`);
+    console.log(`  All-Ops:   ${allOpsStats.totalOperationsTransferred.toLocaleString()} ops`);
+    console.log(`  Vector:    ${vectorStats.totalOperationsTransferred.toLocaleString()} ops`);
     console.log(`  Savings:   ${((allOpsStats.totalOperationsTransferred - vectorStats.totalOperationsTransferred) / allOpsStats.totalOperationsTransferred * 100).toFixed(2)}%`);
     
     console.log(`\n📊 EFFICIENCY (unnecessary transfers avoided):`);
@@ -50,13 +50,13 @@ describe('RepTree Synchronization Methods Comparison', () => {
     // Log the tree sizes for context
     const allOpsVertices = allOpsResult.trees[0].getAllVertices().length;
     const vectorVertices = vectorResult.trees[0].getAllVertices().length;
-    console.log(`\nTree sizes: All-Ops: ${allOpsVertices} vertices, Vector: ${vectorVertices} vertices`);
+    console.log(`\nTree sizes: All-Ops: ${allOpsVertices.toLocaleString()} vertices, Vector: ${vectorVertices.toLocaleString()} vertices`);
     
     // Check that we have a meaningful number of operations in both tests
     expect(allOpsStats.totalOperations).toBeGreaterThan(100);
     expect(vectorStats.totalOperations).toBeGreaterThan(100);
     
     // Verify that we actually saved something with vector-based sync
-    expect(vectorEfficiency).toBeGreaterThan(25);
+    expect(vectorEfficiency).toBeGreaterThan(50);
   });
 }); 

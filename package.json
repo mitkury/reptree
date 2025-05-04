@@ -18,15 +18,16 @@
     "README.md"
   ],
   "scripts": {
+    "prebuild": "rm -rf dist",
     "build": "tsup",
     "dev": "tsup --watch",
     "pretest": "npm run build",
     "test": "vitest run",
-    "test:watch": "vitest watch",
-    "test:basic": "vitest run basic-usage",
-    "test:fuzzy": "vitest run fuzzy",
-    "test:vector": "vitest run state-vector-sync",
-    "test:comparison": "vitest run comparison",
+    "test:watch": "vitest",
+    "test:basic": "vitest run --run basic-usage",
+    "test:fuzzy": "vitest run --run fuzzy",
+    "test:vector": "vitest run --run state-vector-sync",
+    "test:comparison": "vitest run --run comparison",
     "test:coverage": "vitest run --coverage",
     "example": "npm run build && node --loader ts-node/esm examples/basic-usage.ts",
     "prepublishOnly": "npm run build"
