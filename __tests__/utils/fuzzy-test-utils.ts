@@ -66,12 +66,8 @@ export function executeRandomAction(tree: RepTree): void {
         const targetIndex = Math.floor(Math.random() * possibleTargets.length);
         const targetVertex = possibleTargets[targetIndex];
         
-        // Only attempt move if we're not creating a cycle
-        // This is a simplified check - the real isAncestor would be more comprehensive
-        const childrenIds = tree.getChildrenIds(vertexToMove.id);
-        if (!childrenIds.includes(targetVertex.id)) {
-          tree.moveVertex(vertexToMove.id, targetVertex.id);
-        }
+        // Attempt move regardless of cycles to properly test CRDT
+        tree.moveVertex(vertexToMove.id, targetVertex.id);
       }
       break;
     
@@ -218,11 +214,14 @@ export function syncWithStateVectors(trees: RepTree[]): number {
       if (i === j) continue; // Skip self
       
       // Get missing ops from tree j that tree i needs
-      const missingOps = trees[j].getMissingOps(stateVectors[i]);
-      totalTransferred += missingOps.length;
-      
-      if (missingOps.length > 0) {
-        trees[i].merge(missingOps);
+      const stateVector = stateVectors[i];
+      if (stateVector) {
+        const missingOps = trees[j].getMissingOps(stateVector);
+        totalTransferred += missingOps.length;
+        
+        if (missingOps.length > 0) {
+          trees[i].merge(missingOps);
+        }
       }
     }
   }
