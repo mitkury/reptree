@@ -33,8 +33,8 @@ export function executeRandomAction(tree: RepTree): void {
   const vertices = tree.getAllVertices();
   
   if (vertices.length <= 1) {
-    // If only root vertex, just create a child
-    tree.newVertex(tree.rootVertexId);
+    // If only root vertex, just create root
+    tree.createRoot();
     return;
   }
 
@@ -42,7 +42,7 @@ export function executeRandomAction(tree: RepTree): void {
   const actionType = pickRandomAction();
   
   // Pick a random vertex (excluding void vertex)
-  const nonRootVertices = vertices.filter(v => v.id !== tree.rootVertexId);
+  const nonRootVertices = vertices.filter(v => v.id !== tree.root?.id);
   
   switch (actionType) {
     case 'create':
@@ -55,7 +55,7 @@ export function executeRandomAction(tree: RepTree): void {
       // Need non-root vertices to move
       if (nonRootVertices.length < 1) {
         // If no non-root vertices, just create a new vertex
-        tree.newVertex(tree.rootVertexId);
+        tree.newVertex(tree.root!.id);
       } else {
         // Pick a vertex to move (not the root)
         const moveIndex = Math.floor(Math.random() * nonRootVertices.length);
@@ -106,9 +106,13 @@ export function pickRandomAction(): RandomAction {
  * @returns Array of newly created RepTree instances
  */
 export function createTestTrees(treesCount: number): RepTree[] {
+  const tree = new RepTree('original');
+  tree.createRoot();
+  const ops = tree.getAllOps();
+
   const trees: RepTree[] = [];
   for (let i = 0; i < treesCount; i++) {
-    trees.push(new RepTree(`peer${i+1}`));
+    trees.push(new RepTree(`peer${i+1}`, ops));
   }
   return trees;
 }

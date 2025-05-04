@@ -16,14 +16,14 @@ type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
 function subtractRanges(rangesA: number[][], rangesB: number[][]): number[][] {
   if (rangesB.length === 0) return rangesA.map(r => [...r]); // Return a copy
   if (rangesA.length === 0) return []; // If A is empty, nothing to subtract
-  
+
   const result: number[][] = [];
   let indexB = 0;
-  
+
   for (const rangeA of rangesA) {
     let currentStart = rangeA[0];
     const endA = rangeA[1];
-    
+
     // Iterate through ranges in B that could potentially overlap with rangeA
     while (indexB < rangesB.length && rangesB[indexB][1] < currentStart) {
       // Skip ranges in B that are entirely before the current start
@@ -39,10 +39,10 @@ function subtractRanges(rangesA: number[][], rangesB: number[][]): number[][] {
         // Add the portion of rangeA before the overlap
         result.push([currentStart, Math.min(endA, startB - 1)]);
       }
-      
+
       // Move current start past this range in B
       currentStart = Math.max(currentStart, endB + 1);
-      
+
       // If we've gone past the end of rangeA, break inner loop
       if (currentStart > endA) break;
 
@@ -51,22 +51,22 @@ function subtractRanges(rangesA: number[][], rangesB: number[][]): number[][] {
 
       // Only advance indexB if the current rangeB is fully processed relative to currentStart
       // Advance indexB if the end of the current B range is before the new currentStart
-      if (endB < currentStart) { 
-         indexB++;
+      if (endB < currentStart) {
+        indexB++;
       }
       // If the start of the current B range is greater than or equal to currentStart, 
       // it means this B range has been processed for the current segment of A, so move to the next B range.
       else if (startB >= currentStart) {
-          indexB++;
+        indexB++;
       }
     }
-    
+
     // If there's a remaining part of rangeA after processing overlaps with B
     if (currentStart <= endA) {
       result.push([currentStart, endA]);
     }
   }
-  
+
   return result;
 }
 
@@ -82,7 +82,7 @@ export class RepTree {
   private static DEFAULT_MAX_DEPTH = 100000;
 
   readonly peerId: string;
-  readonly rootVertexId: string;
+  private rootVertexId: string | undefined;
 
   private lamportClock = 0;
   private state: TreeState;
@@ -110,32 +110,38 @@ export class RepTree {
     this.state = new TreeState();
 
     if (ops != null && ops.length > 0) {
-      // Find a move op that has a parentId as null
-      let rootMoveOp: MoveVertex | undefined;
-      for (let i = 0; i < ops.length; i++) {
-        if (isMoveVertexOp(ops[i]) && (ops[i] as MoveVertex).parentId === null) {
-          rootMoveOp = ops[i] as MoveVertex;
-          break;
-        }
-      }
-      if (rootMoveOp) {
-        this.rootVertexId = rootMoveOp.targetId;
-      } else {
-        throw new Error('The operations has to contain a move operation with a parentId as null to set the root vertex');
-      }
-
       this.applyOps(ops);
 
-      // @TODO: perhaps don't do it here. Handle it in validation.
-      this.ensureNullVertex();
+      const root = this.root;
+      if (!root) {
+        throw new Error('There has to be a root vertex in the operations');
+      }
 
       // @TODO: validate the tree structure, throw an exception if it's invalid
     } else {
-      // The root is our only vertex that will have a null parentId
-      this.rootVertexId = this.newVertexInternalWithUUID(null);
-
       this.ensureNullVertex();
     }
+  }
+
+  get root(): Vertex | undefined {
+    if (!this.rootVertexId) {
+      const vertices = this.state.getAllVertices();
+      for (const vertex of vertices) {
+        if (vertex.parentId === null && vertex.id !== RepTree.NULL_VERTEX_ID) {
+          this.rootVertexId = vertex.id;
+          return new Vertex(this, vertex);
+        }
+      }
+
+      return undefined;
+    }
+
+    const rootVertex = this.state.getVertex(this.rootVertexId);
+    if (!rootVertex) {
+      throw new Error("Root vertex not found");
+    }
+
+    return new Vertex(this, rootVertex);
   }
 
   getMoveOps(): ReadonlyArray<MoveVertex> {
@@ -149,15 +155,6 @@ export class RepTree {
   getVertex(vertexId: string): Vertex | undefined {
     const vertex = this.state.getVertex(vertexId);
     return vertex ? new Vertex(this, vertex) : undefined;
-  }
-
-  get rootVertex(): Vertex {
-    const rootVertex = this.state.getVertex(this.rootVertexId);
-    if (!rootVertex) {
-      throw new Error("Root vertex not found");
-    }
-
-    return new Vertex(this, rootVertex);
   }
 
   getAllVertices(): ReadonlyArray<Vertex> {
@@ -223,6 +220,20 @@ export class RepTree {
     this.maxDepth = maxDepth;
   }
 
+  createRoot(): Vertex {
+    if (this.rootVertexId) {
+      throw new Error('Root vertex already exists');
+    }
+
+    this.rootVertexId = this.newVertexInternalWithUUID(null);
+
+    const rootVertex = this.state.getVertex(this.rootVertexId);
+    if (!rootVertex) {
+      throw new Error("Root vertex not found");
+    }
+
+    return new Vertex(this, rootVertex);
+  }
   newVertex(parentId: string, props: Record<string, VertexPropertyType> | object | null = null): Vertex {
     const typedProps = props as Record<string, VertexPropertyType> | null;
     const vertexId = this.newVertexInternalWithUUID(parentId);
@@ -291,6 +302,10 @@ export class RepTree {
 
     const pathParts = path.split('/');
 
+    if (!this.rootVertexId) {
+      return undefined;
+    }
+
     const root = this.state.getVertex(this.rootVertexId);
     if (!root) {
       throw new Error('The root vertex is not found');
@@ -318,6 +333,10 @@ export class RepTree {
   }
 
   printTree() {
+    if (!this.rootVertexId) {
+      return '';
+    }
+
     return this.state.printTree(this.rootVertexId);
   }
 
@@ -357,6 +376,14 @@ export class RepTree {
   }
 
   compareStructure(other: RepTree): boolean {
+    if (this.root?.id !== other.root?.id) {
+      return false;
+    }
+
+    if (!this.rootVertexId) {
+      return true;
+    }
+
     return RepTree.compareVertices(this.rootVertexId, this, other);
   }
 
@@ -405,7 +432,7 @@ export class RepTree {
       callback(vertex);
     }
 
-    const unsubscribe = this.observe(vertexId, (_) => { 
+    const unsubscribe = this.observe(vertexId, (_) => {
       const vertex = this.getVertex(vertexId);
       if (vertex) {
         callback(vertex);
@@ -735,32 +762,32 @@ export class RepTree {
   private updateStateVector(op: VertexOperation): void {
     const peerId = op.id.peerId;
     const counter = op.id.counter;
-    
+
     // Initialize ranges array for this peer if it doesn't exist
     if (!this.stateVector[peerId]) {
       this.stateVector[peerId] = [];
     }
-    
+
     const ranges = this.stateVector[peerId];
-    
+
     // Case 1: No ranges yet
     if (ranges.length === 0) {
       ranges.push([counter, counter]);
       return;
     }
-    
+
     let rangeExtendedOrMerged = false;
     let insertIndex = -1;
 
     for (let i = 0; i < ranges.length; i++) {
       const range = ranges[i];
-      
+
       // If counter is already in a range, do nothing
       if (counter >= range[0] && counter <= range[1]) {
         rangeExtendedOrMerged = true;
         break;
       }
-      
+
       // If counter is one less than range start, extend range start
       if (counter === range[0] - 1) {
         range[0] = counter;
@@ -772,7 +799,7 @@ export class RepTree {
         }
         break;
       }
-      
+
       // If counter is one more than range end, extend range end
       if (counter === range[1] + 1) {
         range[1] = counter;
@@ -787,10 +814,10 @@ export class RepTree {
 
       // Keep track of where to insert if no extension/merge happens
       if (counter < range[0] && insertIndex === -1) {
-          insertIndex = i;
+        insertIndex = i;
       }
     }
-    
+
     // If we couldn't extend or merge any range, add a new one
     if (!rangeExtendedOrMerged) {
       if (insertIndex === -1) {
@@ -830,27 +857,27 @@ export class RepTree {
    */
   private diffStateVectors(theirStateVector: Record<string, number[][]>): OpIdRange[] {
     const missingRanges: OpIdRange[] = [];
-    
+
     // Check what we have that they don't have
     for (const [peerId, ourRanges] of Object.entries(this.stateVector)) {
       const theirRanges = theirStateVector[peerId] || [];
-      
+
       // Calculate ranges we have that they don't
       const missing = subtractRanges(ourRanges, theirRanges);
-      
+
       // Convert to OpIdRange format
       for (const [start, end] of missing) {
         // Ensure the range is valid (start <= end)
         if (start <= end) {
-           missingRanges.push({
-             peerId,
-             start,
-             end
-           });
+          missingRanges.push({
+            peerId,
+            start,
+            end
+          });
         }
       }
     }
-    
+
     return missingRanges;
   }
 
@@ -864,24 +891,24 @@ export class RepTree {
   getMissingOps(theirStateVector: Record<string, number[][]>): VertexOperation[] {
     // First, identify the missing operation ranges by comparing state vectors
     const missingRanges = this.diffStateVectors(theirStateVector);
-    
+
     // Then, retrieve only the operations that fall within those ranges
     const missingOps: VertexOperation[] = [];
     // Combine moveOps and setPropertyOps for checking
-    const allOps = [...this.moveOps, ...this.setPropertyOps]; 
-    
+    const allOps = [...this.moveOps, ...this.setPropertyOps];
+
     // Only check operations that might be in the missing ranges
     for (const op of allOps) {
       for (const range of missingRanges) {
-        if (op.id.peerId === range.peerId && 
-            op.id.counter >= range.start && 
-            op.id.counter <= range.end) {
+        if (op.id.peerId === range.peerId &&
+          op.id.counter >= range.start &&
+          op.id.counter <= range.end) {
           missingOps.push(op);
           break; // Move to the next op once found in a missing range
         }
       }
     }
-    
+
     // Sort the missing ops by OpId before returning, ensuring causal order
     missingOps.sort((a, b) => OpId.compare(a.id, b.id));
 

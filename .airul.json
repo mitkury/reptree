@@ -4,6 +4,7 @@
   "sources": [
     "TODO-AI.md",
     "README.md",
+    "package.json",
     "docs/database.md"
   ],
   "output": {

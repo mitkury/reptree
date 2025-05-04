@@ -1,4 +1,4 @@
-This is a context for AI editor/agent about the project. It's generated with a tool Airul (https://github.com/mitkury/airul) out of 3 sources. Feel free to edit .airul.json to change the sources and configure editors. Run `airul gen` to update the context after making changes to .airul.json or the sources. Remember to update TODO-AI.md after major changes in the project, keeping track of completed tasks and new developments.
+This is a context for AI editor/agent about the project. It's generated with a tool Airul (https://github.com/mitkury/airul) out of 4 sources. Feel free to edit .airul.json to change the sources and configure editors. Run `airul gen` to update the context after making changes to .airul.json or the sources. Remember to update TODO-AI.md after major changes in the project, keeping track of completed tasks and new developments.
 
 # From README.md:
 
@@ -82,6 +82,67 @@ otherTree.merge(ops);
 ## License
 
 MIT
+---
+
+# From package.json:
+
+{
+  "name": "reptree",
+  "version": "0.1.2",
+  "description": "A tree data structure using CRDTs for seamless replication between peers",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "prebuild": "rm -rf dist",
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:basic": "vitest run --run basic-usage",
+    "test:fuzzy": "vitest run --run fuzzy",
+    "test:vector": "vitest run --run state-vector-sync",
+    "test:comparison": "vitest run --run comparison",
+    "test:coverage": "vitest run --coverage",
+    "example": "npm run build && node --loader ts-node/esm examples/basic-usage.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "crdt",
+    "tree",
+    "data-structure",
+    "replication"
+  ],
+  "author": "Dmitry Kury (d@dkury.com)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mitkury/reptree.git"
+  },
+  "homepage": "https://github.com/mitkury/reptree#readme",
+  "bugs": {
+    "url": "https://github.com/mitkury/reptree/issues"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.1",
+    "tsup": "^8.0.1",
+    "typescript": "^5.2.2",
+    "vitest": "^1.0.0"
+  }
+}
 ---
 
 # From docs/database.md:

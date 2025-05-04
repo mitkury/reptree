@@ -6,55 +6,59 @@ describe('RepTree Basic Usage', () => {
     // Create a new tree
     const tree = new RepTree('peer1');
 
-    // Root vertex is created automatically
-    const rootVertex = tree.rootVertex;
-    const rootId = rootVertex.id;
-    tree.setVertexProperty(rootId, 'name', 'Project');
+    const rootVertex = tree.createRoot();
+    rootVertex.name = 'Project';
 
     // Create a folder structure with properties
-    const docsFolder = tree.newVertex(rootId);
-    tree.setVertexProperty(docsFolder.id, 'name', 'Docs');
-    tree.setVertexProperty(docsFolder.id, 'type', 'folder');
-    tree.setVertexProperty(docsFolder.id, 'icon', 'folder-icon');
+    const docsFolder = rootVertex.newNamedChild('Docs');
+    docsFolder.setProperties({
+      type: 'folder',
+      icon: 'folder-icon'
+    });
 
-    const imagesFolder = tree.newVertex(rootId);
-    tree.setVertexProperty(imagesFolder.id, 'name', 'Images');
-    tree.setVertexProperty(imagesFolder.id, 'type', 'folder');
-    tree.setVertexProperty(imagesFolder.id, 'icon', 'image-icon');
+    const imagesFolder = rootVertex.newNamedChild('Images');
+    imagesFolder.setProperties({
+      type: 'folder',
+      icon: 'image-icon'
+    });
 
     // Add files to folders
-    const readmeFile = tree.newVertex(docsFolder.id);
-    tree.setVertexProperty(readmeFile.id, 'name', 'README.md');
-    tree.setVertexProperty(readmeFile.id, 'type', 'file');
-    tree.setVertexProperty(readmeFile.id, 'size', 2048);
-    tree.setVertexProperty(readmeFile.id, 'lastModified', '2023-10-15T14:22:10Z');
-    tree.setVertexProperty(readmeFile.id, 's3Path', 's3://my-bucket/docs/README.md');
+    const readmeFile = docsFolder.newNamedChild('README.md');
+    readmeFile.setProperties({
+      type: 'file',
+      size: 2048,
+      lastModified: '2023-10-15T14:22:10Z',
+      s3Path: 's3://my-bucket/docs/README.md'
+    });
 
-    const logoFile = tree.newVertex(imagesFolder.id);
-    tree.setVertexProperty(logoFile.id, 'name', 'logo.png');
-    tree.setVertexProperty(logoFile.id, 'type', 'file');
-    tree.setVertexProperty(logoFile.id, 'size', 15360);
-    tree.setVertexProperty(logoFile.id, 'dimensions', '512x512');
-    tree.setVertexProperty(logoFile.id, 'format', 'png');
-    tree.setVertexProperty(logoFile.id, 's3Path', 's3://my-bucket/images/logo.png');
+    const logoFile = imagesFolder.newNamedChild('logo.png');
+    logoFile.setProperties({
+      type: 'file',
+      size: 15360,
+      dimensions: '512x512',
+      format: 'png',
+      s3Path: 's3://my-bucket/images/logo.png'
+    });
 
     // Move a file to a different folder
-    tree.moveVertex(logoFile.id, docsFolder.id);
+    logoFile.moveTo(docsFolder);
+
+    // Get children of a folder
+    const docsFolderContents = docsFolder.children;
 
     // Verify the structure
-    expect(tree.getVertexProperty(rootId, 'name')).toBe('Project');
+    expect(rootVertex.name).toBe('Project');
     
     // Verify children
-    expect(tree.getChildrenIds(rootId).length).toBe(2);
+    expect(rootVertex.childrenIds.length).toBe(2);
     
     // Verify docs folder content
-    expect(tree.getChildrenIds(docsFolder.id).length).toBe(2);
-    expect(tree.getVertexProperty(docsFolder.id, 'type')).toBe('folder');
+    expect(docsFolder.childrenIds.length).toBe(2);
+    expect(docsFolder.getProperty('type')).toBe('folder');
     
     // Check if logo was moved successfully
-    const docsFolderContents = tree.getChildrenIds(docsFolder.id);
-    expect(docsFolderContents.includes(logoFile.id)).toBe(true);
-    expect(tree.getChildrenIds(imagesFolder.id).length).toBe(0);
+    expect(docsFolderContents.some(child => child.id === logoFile.id)).toBe(true);
+    expect(imagesFolder.childrenIds.length).toBe(0);
 
     // Syncing between trees
     const otherTree = new RepTree('peer2');
@@ -65,6 +69,7 @@ describe('RepTree Basic Usage', () => {
     expect(tree.compareStructure(otherTree)).toBe(true);
     
     // Additional verification of a specific property to show how we could check individual elements
-    expect(otherTree.getVertexProperty(rootId, 'name')).toBe('Project');
+    const otherRootVertex = otherTree.root;
+    expect(otherRootVertex?.name).toBe('Project');
   });
 }); 

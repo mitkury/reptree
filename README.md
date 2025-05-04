@@ -29,7 +29,7 @@ import { RepTree } from 'reptree';
 const tree = new RepTree('peer1');
 
 // Root vertex is created automatically
-const rootVertex = tree.rootVertex;
+const rootVertex = tree.createRoot();
 rootVertex.name = 'Project';
 
 // Create a folder structure with properties
