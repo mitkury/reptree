@@ -677,7 +677,7 @@ export class RepTree {
       const pendingProperties = this.pendingPropertiesWithMissingVertex.get(op.targetId) || [];
       this.pendingPropertiesWithMissingVertex.delete(op.targetId);
       for (const prop of pendingProperties) {
-        this.setPropertyAndItsOpId(prop);
+        this.applyProperty(prop);
       }
     }
   }
