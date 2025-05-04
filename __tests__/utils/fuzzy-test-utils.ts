@@ -87,12 +87,21 @@ export function executeRandomAction(tree: RepTree): void {
 /**
  * Pick a random action type from the available actions
  * 
- * @returns A random action type
+ * @returns A random action type with weighted distribution:
+ * - 60% chance for 'move'
+ * - 30% chance for 'create'
+ * - 30% chance for 'setProperty'
  */
 export function pickRandomAction(): RandomAction {
-  const actions: RandomAction[] = ['move', 'create', 'setProperty'];
-  const index = Math.floor(Math.random() * actions.length);
-  return actions[index];
+  const random = Math.random() * 120; // Total of percentages
+  
+  if (random < 60) {
+    return 'move';
+  } else if (random < 90) {
+    return 'create';
+  } else {
+    return 'setProperty';
+  }
 }
 
 /**
