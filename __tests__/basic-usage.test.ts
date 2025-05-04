@@ -61,20 +61,10 @@ describe('RepTree Basic Usage', () => {
     const ops = tree.getAllOps();
     otherTree.merge(ops);
 
-    // Verify that second tree has the same structure
+    // Verify that second tree has the same structure using the built-in compareStructure method
+    expect(tree.compareStructure(otherTree)).toBe(true);
+    
+    // Additional verification of a specific property to show how we could check individual elements
     expect(otherTree.getVertexProperty(rootId, 'name')).toBe('Project');
-    
-    // Find the docs folder in the second tree
-    const otherDocsFolder = otherTree.getChildrenIds(rootId)
-      .find(id => otherTree.getVertexProperty(id, 'name') === 'Docs');
-    
-    expect(otherDocsFolder).toBeDefined();
-    expect(otherTree.getChildrenIds(otherDocsFolder!).length).toBe(2);
-    
-    // Find logoFile in the docs folder of the second tree
-    const logoInSecondTree = otherTree.getChildrenIds(otherDocsFolder!)
-      .find(id => otherTree.getVertexProperty(id, 'name') === 'logo.png');
-    
-    expect(logoInSecondTree).toBeDefined();
   });
 }); 
