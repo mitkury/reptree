@@ -27,19 +27,17 @@ import { RepTree } from 'reptree';
 
 // Create a new tree
 const tree = new RepTree('peer1');
-
-// Root vertex is created automatically
-const rootVertex = tree.createRoot();
-rootVertex.name = 'Project';
+const root = tree.createRoot();
+root.name = 'Project';
 
 // Create a folder structure with properties
-const docsFolder = rootVertex.newNamedChild('Docs');
+const docsFolder = root.newNamedChild('Docs');
 docsFolder.setProperties({
   type: 'folder',
   icon: 'folder-icon'
 });
 
-const imagesFolder = rootVertex.newNamedChild('Images');
+const imagesFolder = root.newNamedChild('Images');
 imagesFolder.setProperties({
   type: 'folder',
   icon: 'image-icon'
