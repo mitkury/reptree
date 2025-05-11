@@ -134,4 +134,146 @@ describe('Yjs Properties', () => {
     expect(retrievedMap.get('key1')).toBe('value1');
     expect(retrievedMap.get('key2')).toBe('value2');
   });
+
+  test('Override regular property with Yjs property', () => {
+    const tree = new RepTree('peer1');
+    const root = tree.createRoot();
+    
+    // Set a regular property first
+    tree.setVertexProperty(root.id, 'content', 'Regular string content');
+    expect(tree.getVertexProperty(root.id, 'content')).toBe('Regular string content');
+    
+    // Now override with a Yjs document
+    const ydoc = new Y.Doc();
+    const ytext = ydoc.getText('default');
+    ytext.insert(0, 'Yjs content');
+    tree.setVertexProperty(root.id, 'content', ydoc);
+    
+    // Verify it's now a Yjs document
+    const retrievedDoc = tree.getVertexProperty(root.id, 'content');
+    expect(retrievedDoc).toBeInstanceOf(Y.Doc);
+    expect((retrievedDoc as Y.Doc).getText('default').toString()).toBe('Yjs content');
+  });
+  
+  test('Override Yjs property with regular property', () => {
+    const tree = new RepTree('peer1');
+    const root = tree.createRoot();
+    
+    // Set a Yjs document first
+    const ydoc = new Y.Doc();
+    const ytext = ydoc.getText('default');
+    ytext.insert(0, 'Initial Yjs content');
+    tree.setVertexProperty(root.id, 'content', ydoc);
+    
+    // Verify it's a Yjs document
+    let retrievedDoc = tree.getVertexProperty(root.id, 'content');
+    expect(retrievedDoc).toBeInstanceOf(Y.Doc);
+    
+    // Now override with a regular property
+    tree.setVertexProperty(root.id, 'content', 'Regular string content');
+    
+    // Verify it's now a regular string
+    retrievedDoc = tree.getVertexProperty(root.id, 'content');
+    expect(typeof retrievedDoc).toBe('string');
+    expect(retrievedDoc).toBe('Regular string content');
+  });
+  
+  test('Multiple property type transitions', () => {
+    const tree = new RepTree('peer1');
+    const root = tree.createRoot();
+    
+    // Start with a string
+    tree.setVertexProperty(root.id, 'content', 'Initial string');
+    expect(tree.getVertexProperty(root.id, 'content')).toBe('Initial string');
+    
+    // Change to a number
+    tree.setVertexProperty(root.id, 'content', 42);
+    expect(tree.getVertexProperty(root.id, 'content')).toBe(42);
+    
+    // Change to a Yjs document
+    const ydoc1 = new Y.Doc();
+    const ytext1 = ydoc1.getText('default');
+    ytext1.insert(0, 'First Yjs content');
+    tree.setVertexProperty(root.id, 'content', ydoc1);
+    
+    // Verify it's a Yjs document
+    let retrievedDoc = tree.getVertexProperty(root.id, 'content');
+    expect(retrievedDoc).toBeInstanceOf(Y.Doc);
+    expect((retrievedDoc as Y.Doc).getText('default').toString()).toBe('First Yjs content');
+    
+    // Change back to a string
+    tree.setVertexProperty(root.id, 'content', 'Back to string');
+    expect(tree.getVertexProperty(root.id, 'content')).toBe('Back to string');
+    
+    // Change to a different Yjs document
+    const ydoc2 = new Y.Doc();
+    const ytext2 = ydoc2.getText('default');
+    ytext2.insert(0, 'Second Yjs content');
+    tree.setVertexProperty(root.id, 'content', ydoc2);
+    
+    // Verify it's the new Yjs document
+    retrievedDoc = tree.getVertexProperty(root.id, 'content');
+    expect(retrievedDoc).toBeInstanceOf(Y.Doc);
+    expect((retrievedDoc as Y.Doc).getText('default').toString()).toBe('Second Yjs content');
+  });
+  
+  test('Sync between trees with property type transitions', () => {
+    // Create two trees
+    const tree1 = new RepTree('peer1');
+    const root1 = tree1.createRoot();
+    
+    const tree2 = new RepTree('peer2');
+    tree2.merge(tree1.getAllOps());
+    const root2 = tree2.root!;
+    
+    // Tree1: Set a string property
+    tree1.setVertexProperty(root1.id, 'content', 'Initial string');
+    tree2.merge(tree1.popLocalOps());
+    expect(tree2.getVertexProperty(root2.id, 'content')).toBe('Initial string');
+    
+    // Tree2: Override with Yjs document
+    const ydoc2 = new Y.Doc();
+    const ytext2 = ydoc2.getText('default');
+    ytext2.insert(0, 'Tree2 Yjs content');
+    tree2.setVertexProperty(root2.id, 'content', ydoc2);
+    tree1.merge(tree2.popLocalOps());
+    
+    // Verify both trees have Yjs document
+    let doc1 = tree1.getVertexProperty(root1.id, 'content') as Y.Doc;
+    let doc2 = tree2.getVertexProperty(root2.id, 'content') as Y.Doc;
+    expect(doc1).toBeInstanceOf(Y.Doc);
+    expect(doc2).toBeInstanceOf(Y.Doc);
+    expect(doc1.getText('default').toString()).toBe('Tree2 Yjs content');
+    
+    // Tree1: Make changes to Yjs document
+    doc1.getText('default').insert(0, 'Updated: ');
+    tree2.merge(tree1.popLocalOps());
+    
+    // Verify changes propagated
+    doc2 = tree2.getVertexProperty(root2.id, 'content') as Y.Doc;
+    expect(doc2.getText('default').toString()).toBe('Updated: Tree2 Yjs content');
+    
+    // Tree1: Override with number
+    tree1.setVertexProperty(root1.id, 'content', 123);
+    tree2.merge(tree1.popLocalOps());
+    
+    // Verify both have number
+    expect(tree1.getVertexProperty(root1.id, 'content')).toBe(123);
+    expect(tree2.getVertexProperty(root2.id, 'content')).toBe(123);
+    
+    // Tree2: Back to Yjs
+    const finalYdoc = new Y.Doc();
+    const finalYtext = finalYdoc.getText('default');
+    finalYtext.insert(0, 'Final Yjs state');
+    tree2.setVertexProperty(root2.id, 'content', finalYdoc);
+    tree1.merge(tree2.popLocalOps());
+    
+    // Verify final state
+    doc1 = tree1.getVertexProperty(root1.id, 'content') as Y.Doc;
+    doc2 = tree2.getVertexProperty(root2.id, 'content') as Y.Doc;
+    expect(doc1).toBeInstanceOf(Y.Doc);
+    expect(doc2).toBeInstanceOf(Y.Doc);
+    expect(doc1.getText('default').toString()).toBe('Final Yjs state');
+    expect(doc2.getText('default').toString()).toBe('Final Yjs state');
+  });
 });

@@ -607,8 +607,8 @@ export class RepTree {
     
     // Remove any existing observer
     if (this.yjsObservers.has(propertyKey)) {
-      const existingDoc = this.getVertexProperty(vertexId, key) as Y.Doc;
-      if (existingDoc) {
+      const existingDoc = this.getVertexProperty(vertexId, key);
+      if (existingDoc instanceof Y.Doc) {
         existingDoc.off('update', this.yjsObservers.get(propertyKey)!);
       }
       this.yjsObservers.delete(propertyKey);
