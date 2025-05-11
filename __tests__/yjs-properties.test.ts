@@ -217,6 +217,112 @@ describe('Yjs Properties', () => {
     expect((retrievedDoc as Y.Doc).getText('default').toString()).toBe('Second Yjs content');
   });
   
+  test('Multiple sequential updates to Yjs document', () => {
+    const tree1 = new RepTree('peer1');
+    const root1 = tree1.createRoot();
+    
+    const tree2 = new RepTree('peer2');
+    tree2.merge(tree1.getAllOps());
+    const root2 = tree2.root!;
+    
+    // Create a Yjs document in tree1
+    const ydoc1 = new Y.Doc();
+    const ytext1 = ydoc1.getText('default');
+    ytext1.insert(0, 'Initial text');
+    tree1.setVertexProperty(root1.id, 'content', ydoc1);
+    
+    // Sync to tree2
+    const initialOps = tree1.popLocalOps();
+    expect(initialOps.length).toBeGreaterThan(0); // Verify ops were created
+    tree2.merge(initialOps);
+    
+    // Make multiple edits to the document in tree1
+    const doc1 = tree1.getVertexProperty(root1.id, 'content') as Y.Doc;
+    const text1 = doc1.getText('default');
+    
+    // Edit 1
+    text1.insert(text1.length, ' - Edit 1');
+    const ops1 = tree1.popLocalOps();
+    expect(ops1.length).toBeGreaterThan(0); // Verify ops were created for Edit 1
+    
+    // Edit 2
+    text1.insert(text1.length, ' - Edit 2');
+    const ops2 = tree1.popLocalOps();
+    expect(ops2.length).toBeGreaterThan(0); // Verify ops were created for Edit 2
+    
+    // Edit 3
+    text1.insert(0, 'Prefix: ');
+    const ops3 = tree1.popLocalOps();
+    expect(ops3.length).toBeGreaterThan(0); // Verify ops were created for Edit 3
+    
+    // Apply all edits to tree2 in sequence
+    tree2.merge(ops1);
+    tree2.merge(ops2);
+    tree2.merge(ops3);
+    
+    // Verify final state
+    const doc2 = tree2.getVertexProperty(root2.id, 'content') as Y.Doc;
+    expect(doc2.getText('default').toString()).toBe('Prefix: Initial text - Edit 1 - Edit 2');
+    expect(doc1.getText('default').toString()).toBe('Prefix: Initial text - Edit 1 - Edit 2');
+  });
+
+  test('Concurrent edits with Yjs CRDT properties', () => {
+    // This test verifies that concurrent edits to a Yjs document from different
+    // trees are correctly merged with the expected CRDT behavior
+    
+    // Create two trees with the same initial state
+    const tree1 = new RepTree('peer1');
+    const root1 = tree1.createRoot();
+    
+    const tree2 = new RepTree('peer2');
+    tree2.merge(tree1.getAllOps());
+    const root2 = tree2.root!;
+    
+    // Create a Yjs document in tree1
+    const ydoc1 = new Y.Doc();
+    tree1.setVertexProperty(root1.id, 'content', ydoc1);
+    
+    // Sync to tree2
+    tree2.merge(tree1.popLocalOps());
+    
+    // Get the documents in both trees
+    const doc1 = tree1.getVertexProperty(root1.id, 'content') as Y.Doc;
+    const doc2 = tree2.getVertexProperty(root2.id, 'content') as Y.Doc;
+    
+    const text1 = doc1.getText('default');
+    const text2 = doc2.getText('default');
+    
+    // Make concurrent edits in both trees
+    // Tree1: Add numbers 1-5 at the beginning
+    for (let i = 5; i >= 1; i--) {
+      text1.insert(0, i.toString());
+    }
+    
+    // Tree2: Add numbers 6-10 at the end
+    for (let i = 6; i <= 10; i++) {
+      text2.insert(text2.length, i.toString());
+    }
+    
+    // Collect operations from both trees
+    const ops1 = tree1.popLocalOps();
+    const ops2 = tree2.popLocalOps();
+    
+    // Apply tree2's operations to tree1
+    tree1.merge(ops2);
+    
+    // Apply tree1's operations to tree2
+    tree2.merge(ops1);
+    
+    // Verify both trees have the same content after merging
+    // The expected result is "12345" + "678910" because:
+    // - Tree1 inserted "12345" at the beginning
+    // - Tree2 inserted "678910" at the end
+    const expected = '12345678910';
+    
+    expect(doc1.getText('default').toString()).toBe(expected);
+    expect(doc2.getText('default').toString()).toBe(expected);
+  });
+
   test('Sync between trees with property type transitions', () => {
     // Create two trees
     const tree1 = new RepTree('peer1');
