@@ -602,7 +602,26 @@ export class RepTree {
     const prevOpId = this.propertiesAndTheirOpIds.get(`${op.key}@${op.targetId}`);
 
     if (!op.transient) {
+      // Always add the operation to setPropertyOps for a complete history
       this.setPropertyOps.push(op);
+      
+      // Type protection: First-writer-wins for property types
+      if (prevProp !== undefined && prevOpId) {
+        // Check if the types are different
+        const newValueType = this.getPropertyTypeCategory(op.value);
+        const prevValueType = this.getPropertyTypeCategory(prevProp);
+        
+        if (newValueType !== prevValueType) {
+          // Type conflict detected - first writer wins, so we ignore this operation
+          console.warn(`Type conflict detected for property ${op.key} on vertex ${op.targetId}. ` +
+            `Established type: ${prevValueType}, attempted new type: ${newValueType}. ` +
+            `Operation rejected due to type protection.`);
+          
+          // We still add it to known ops to avoid processing it again
+          this.knownOps.add(op.id.toString());
+          return;
+        }
+      }
 
       // Apply the property if it's not already applied or if the current op is newer
       // This is the last writer wins approach that ensures the same state between replicas.
@@ -620,6 +639,17 @@ export class RepTree {
         targetVertex.removeTransientProperty(op.key);
       }
     } else {
+      // For transient properties, we also apply type protection
+      if (prevProp !== undefined) {
+        const newValueType = this.getPropertyTypeCategory(op.value);
+        const prevValueType = this.getPropertyTypeCategory(prevProp);
+        
+        if (newValueType !== prevValueType) {
+          // Type conflict for transient property - ignore the operation
+          return;
+        }
+      }
+      
       if (!prevTransientOpId || op.id.isGreaterThan(prevTransientOpId)) {
         this.setTransientPropertyAndItsOpId(op);
       }
@@ -757,6 +787,33 @@ export class RepTree {
    */
   get stateVectorEnabled(): boolean {
     return this._stateVectorEnabled;
+  }
+  
+  /**
+   * Determines the type category of a property value
+   * Used for type protection to ensure property types remain consistent
+   * 
+   * @param value The property value to categorize
+   * @returns A string representing the type category
+   */
+  private getPropertyTypeCategory(value: VertexPropertyType): string {
+    if (value === undefined) {
+      return 'undefined';
+    }
+    
+    // Check for arrays
+    if (Array.isArray(value)) {
+      // Differentiate between array types
+      if (value.length > 0) {
+        if (typeof value[0] === 'string') return 'string[]';
+        if (typeof value[0] === 'number') return 'number[]';
+        if (typeof value[0] === 'boolean') return 'boolean[]';
+      }
+      return 'array'; // Empty array or unknown array type
+    }
+    
+    // For primitive values, return their JavaScript type
+    return typeof value;
   }
 
   /**
