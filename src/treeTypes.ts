@@ -1,8 +1,9 @@
 import { VertexState } from "./VertexState";
+import * as Y from 'yjs';
 
 export type TreeVertexId = string;
 
-export type VertexPropertyType = string | number | boolean | string[] | number[] | boolean[] | undefined;
+export type VertexPropertyType = string | number | boolean | string[] | number[] | boolean[] | undefined | Y.Doc;
 
 export type TreeVertexProperty = {
   readonly key: string;
