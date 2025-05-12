@@ -11,10 +11,11 @@ RepTree is a hierarchical, tree-structured, distributed database with the follow
 
 ## CRDT Foundation
 
-RepTree employs a dual CRDT architecture for distributed operation:
+RepTree employs a multi-CRDT architecture for distributed operation:
 
 - **Move Tree CRDT**: Handles structural operations (based on [Kleppmann's paper](https://martin.kleppmann.com/papers/move-op.pdf))
 - **Last-Writer-Wins (LWW) CRDT**: Manages property values with simple conflict resolution
+- **Yjs CRDT**: Provides fine-grained collaborative editing for complex data structures
 - **Strong Eventual Consistency**: All replicas eventually converge to identical states
 
 ## Operation-Based Storage
@@ -61,7 +62,11 @@ RepTree specializes in:
 
 RepTree can be extended to serve as:
 - A virtual file system (with specialized vertex types)
-- A rich text collaborative editor (via Yjs integration)
+- A collaborative editing platform (via Yjs integration) supporting:
+  - Rich text documents with formatting
+  - Structured data with arrays and maps
+  - XML-like content
+  - Custom collaborative data types
 - A versioned data store (via operation history)
 
 RepTree combines aspects of tree databases, event-sourced systems, and CRDT-based collaborative editors into a specialized database paradigm optimized for hierarchical, distributed data management. 
