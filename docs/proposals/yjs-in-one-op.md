@@ -6,8 +6,110 @@ Date: 2025-05-12
 
 This proposal outlines a refactoring approach to simplify how RepTree handles CRDT-based properties (specifically Yjs documents). The core idea is to keep the existing `SetVertexProperty` operation but modify the `VertexPropertyType` to include a serializable `CRDTType` instead of directly using `Y.Doc`. When applying operations, RepTree will detect CRDT properties and apply updates using the appropriate CRDT mechanism rather than Last-Writer-Wins (LWW).
 
-## Current Implementation
+The key insight is to maintain different types for property values in operations versus the state:
+- In the state (what users interact with): `vertex.getProperty('some-doc')` returns a `Y.Doc` object via `VertexPropertyType`
+- In operations: Store `CRDTType` with serialized `Uint8Array` via `VertexPropertyTypeInOperation`
 
+### Dual Representation Approach
+
+This approach creates a dual representation system:
+
+1. **User-Facing API**: Users work with actual `Y.Doc` objects when getting/setting properties
+   ```typescript
+   // User sets a Y.Doc directly
+   const ydoc = new Y.Doc();
+   tree.setVertexProperty(vertexId, 'content', ydoc);
+   
+   // User gets back a Y.Doc directly
+   const doc = tree.getVertexProperty(vertexId, 'content'); // Returns Y.Doc
+   ```
+
+2. **Internal Operation Storage**: Operations use `VertexPropertyTypeInOperation` with `CRDTType`
+   ```typescript
+   // Internal operation representation
+   const op = {
+     id: new OpId(clock, peerId),
+     targetId: vertexId,
+     key: 'content',
+     value: {
+       type: 'yjs',
+       value: Uint8Array // Serialized Y.Doc state
+     } as CRDTType,
+     transient: false
+   };
+   ```
+
+This separation simplifies both the user experience and the internal operation model.
+
+### Y.Doc Storage in VertexState
+
+A key aspect of this implementation is how Y.Doc instances are stored:
+
+1. **Using Existing Property Storage**: Y.Doc instances will be stored directly in the `properties` array of `VertexState` class:
+   ```typescript
+   // In VertexState.ts
+   private properties: TreeVertexProperty[];
+   ```
+
+2. **No Separate Map Needed**: Unlike the previous implementation, we don't need a separate `activeYDocs` map to store Y.Doc instances. The standard property access mechanisms will work for both regular properties and Y.Doc properties.
+
+3. **Type Conversion During Operation Creation**: When creating operations, we'll convert between types:
+   ```typescript
+   // When creating an operation
+   let opValue: VertexPropertyTypeInOperation;
+   
+   if (value instanceof Y.Doc) {
+     // Convert Y.Doc to CRDTType for operation
+     const state = Y.encodeStateAsUpdate(value);
+     opValue = {
+       type: "yjs",
+       value: state
+     };
+   } else {
+     // Regular values pass through unchanged
+     opValue = value;
+   }
+   ```
+
+4. **Transparent Property Access**: From the user's perspective, getting a property that contains a Y.Doc will work seamlessly through the standard `getVertexProperty` method without any special handling.
+
+### Operation Application and Type Conversion
+
+When applying operations, we need to handle the conversion between serialized CRDTType and Y.Doc:
+
+1. **Initial Y.Doc Creation**: When an operation with a CRDTType is received:
+   ```typescript
+   if (value && typeof value === 'object' && 'type' in value && value.type === 'yjs') {
+     const crdtValue = value as CRDTType;
+     
+     // Create new Y.Doc from the serialized data
+     const newDoc = new Y.Doc();
+     Y.applyUpdate(newDoc, crdtValue.value);
+     
+     // Store the Y.Doc in the vertex property (VertexPropertyType)
+     this.setPropertyValue(targetId, key, newDoc, transient);
+   }
+   ```
+
+2. **Updating Existing Y.Doc**: When an update to an existing Y.Doc property is received:
+   ```typescript
+   const currentProperty = this.getVertexProperty(targetId, key);
+   if (currentProperty instanceof Y.Doc) {
+     // Apply update to existing Y.Doc
+     Y.applyUpdate(currentProperty, crdtValue.value, 'reptree');
+     // No need to update the property reference since we modified the existing Y.Doc
+   }
+   ```
+
+3. **Serialization for Sync**: When synchronizing between peers, we'll serialize Y.Doc properties to CRDTType:
+   ```typescript
+   // When preparing operations for sync
+   const ops = this.getAllOps();
+   // The operations already contain serialized CRDTType values
+   // No additional conversion needed for sync
+   ```
+
+## Current Implementation
 Currently, RepTree uses two separate operation types for property management:
 
 1. `SetVertexProperty` - For setting regular properties (strings, numbers, booleans, arrays, and Y.Doc)
@@ -21,18 +123,29 @@ This separation creates several challenges:
 
 ## Proposed Changes
 
-### 1. Extended Property Type System
+### 1. Separate Property Type Systems
 
-Extend the `VertexPropertyType` to include a serializable `CRDTType` instead of directly using `Y.Doc`:
+Create separate union types for operations versus property state:
 
 ```typescript
-// New CRDTType for serializable CRDT data
+// New CRDTType for serializable CRDT data in operations
 export interface CRDTType {
   type: string;           // e.g., "yjs"
   value: Uint8Array;      // Serialized CRDT state
 }
 
-// Updated VertexPropertyType
+// Type for property values in operations
+export type VertexPropertyTypeInOperation = 
+  | string 
+  | number 
+  | boolean 
+  | string[] 
+  | number[] 
+  | boolean[] 
+  | undefined
+  | CRDTType;  // For CRDT data in operations
+
+// Type for property values in state (unchanged)
 export type VertexPropertyType = 
   | string 
   | number 
@@ -41,19 +154,19 @@ export type VertexPropertyType =
   | number[] 
   | boolean[] 
   | undefined
-  | CRDTType;  // Replace Y.Doc with CRDTType
+  | Y.Doc;  // Actual Y.Doc objects in state
 ```
 
-### 2. Keep SetVertexProperty As Is
+### 2. Update SetVertexProperty to Use Operation-Specific Type
 
-The existing `SetVertexProperty` operation remains unchanged, but now accepts the new `CRDTType` as part of `VertexPropertyType`:
+Modify the `SetVertexProperty` operation to use the new operation-specific property type:
 
 ```typescript
 export interface SetVertexProperty {
   id: OpId;
   targetId: string;
   key: string;
-  value: VertexPropertyType; // Now includes CRDTType
+  value: VertexPropertyTypeInOperation; // Uses operation-specific type
   transient: boolean;
 }
 ```
@@ -72,26 +185,23 @@ applyProperty(op: SetVertexProperty) {
     
     // Get current property if it exists
     const currentProperty = this.getVertexProperty(targetId, key);
-    const currentYDoc = this.getYDocFromProperty(currentProperty);
     
     if (crdtValue.type === "yjs") {
-      if (currentYDoc) {
+      if (currentProperty instanceof Y.Doc) {
         // Apply update to existing Y.Doc
-        Y.applyUpdate(currentYDoc, crdtValue.value, 'reptree');
+        Y.applyUpdate(currentProperty, crdtValue.value, 'reptree');
+        // No need to update the property since we modified it in place
       } else {
         // Create new Y.Doc if property doesn't exist or isn't a Y.Doc
         const newDoc = new Y.Doc();
         Y.applyUpdate(newDoc, crdtValue.value);
         
-        // Store the Y.Doc in memory for active use
-        this.activeYDocs.set(`${key}@${targetId}`, newDoc);
+        // Store the Y.Doc in the vertex property
+        this.setPropertyValue(targetId, key, newDoc, transient);
         
         // Set up observer for the new Y.Doc
         this.setupYjsObserver(newDoc, targetId, key);
       }
-      
-      // Store the serialized CRDT value
-      this.setPropertyValue(targetId, key, crdtValue, transient);
     }
   } else {
     // Handle primitive property types (standard LWW behavior)
@@ -99,28 +209,8 @@ applyProperty(op: SetVertexProperty) {
   }
 }
 
-// Helper method to get Y.Doc from property
-getYDocFromProperty(property: VertexPropertyType): Y.Doc | null {
-  if (property && typeof property === 'object' && 'type' in property && property.type === 'yjs') {
-    const crdtValue = property as CRDTType;
-    const key = `${key}@${targetId}` as PropertyKeyAtVertexId;
-    
-    // Check if we have an active Y.Doc for this property
-    let yDoc = this.activeYDocs.get(key);
-    
-    if (!yDoc) {
-      // Create a new Y.Doc from the serialized state
-      yDoc = new Y.Doc();
-      Y.applyUpdate(yDoc, crdtValue.value);
-      this.activeYDocs.set(key, yDoc);
-      this.setupYjsObserver(yDoc, targetId, key);
-    }
-    
-    return yDoc;
-  }
-  
-  return null;
-}
+// No longer needed - properties in state are already Y.Doc instances
+// and properties in operations are CRDTType
 ```
 
 ### 4. Y.Doc to CRDTType Conversion
@@ -128,26 +218,23 @@ getYDocFromProperty(property: VertexPropertyType): Y.Doc | null {
 When setting a Y.Doc property, the system will automatically convert it to a CRDTType:
 
 ```typescript
-setVertexProperty(vertexId: string, key: string, value: VertexPropertyType | Y.Doc) {
-  let finalValue: VertexPropertyType;
+setVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
+  let opValue: VertexPropertyTypeInOperation;
   
-  // Convert Y.Doc to CRDTType if needed
+  // Convert Y.Doc to CRDTType for operation
   if (value instanceof Y.Doc) {
     // Create a CRDTType from the Y.Doc
     const state = Y.encodeStateAsUpdate(value);
-    finalValue = {
+    opValue = {
       type: "yjs",
       value: state
     };
     
-    // Store the active Y.Doc for this property
-    const propertyKey = `${key}@${vertexId}` as PropertyKeyAtVertexId;
-    this.activeYDocs.set(propertyKey, value);
-    
     // Set up observer for future changes
     this.setupYjsObserver(value, vertexId, key);
   } else {
-    finalValue = value;
+    // Regular values pass through unchanged
+    opValue = value;
   }
   
   // Create the standard SetVertexProperty operation
@@ -156,7 +243,7 @@ setVertexProperty(vertexId: string, key: string, value: VertexPropertyType | Y.D
     this.peerId,
     vertexId,
     key,
-    finalValue
+    opValue
   );
   
   this.localOps.push(op);
@@ -166,7 +253,8 @@ setVertexProperty(vertexId: string, key: string, value: VertexPropertyType | Y.D
 // Helper method to get a Y.Doc from a property
 getVertexPropertyAsYDoc(vertexId: string, key: string): Y.Doc | null {
   const property = this.getVertexProperty(vertexId, key);
-  return this.getYDocFromProperty(property, vertexId, key);
+  // Since VertexPropertyType includes Y.Doc, we just need to check the type
+  return property instanceof Y.Doc ? property : null;
 }
 ```
 
