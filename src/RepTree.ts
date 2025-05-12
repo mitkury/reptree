@@ -28,7 +28,6 @@ type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
  */
 export class RepTree {
   private static NULL_VERTEX_ID = '0';
-  private static DEFAULT_MAX_DEPTH = 100000;
 
   readonly peerId: string;
   private rootVertexId: string | undefined;
@@ -46,7 +45,6 @@ export class RepTree {
   private knownOps: Set<string> = new Set();
   private parentIdBeforeMove: Map<OpId, string | null | undefined> = new Map();
   private opAppliedCallbacks: ((op: VertexOperation) => void)[] = [];
-  private maxDepth = RepTree.DEFAULT_MAX_DEPTH;
 
   // State vector tracking operations from each peer
   private stateVector: StateVector;
@@ -178,16 +176,6 @@ export class RepTree {
     const ops = this.localOps;
     this.localOps = [];
     return ops;
-  }
-
-  // @TODO: can we change the approach of checking for infinite loops? Maybe if we build a map of visited vertices - we can use it to detect infinite loops
-  /**
-   * Sets the maximum depth of the tree. 
-   * We need to check whether a vertex is an ancestor of another vertex when we move it to prevent infinite loops.
-   * @param maxDepth The maximum depth of the tree.
-   */
-  setMaxDepth(maxDepth: number) {
-    this.maxDepth = maxDepth;
   }
 
   createRoot(): Vertex {
@@ -420,24 +408,30 @@ export class RepTree {
     return true;
   }
 
-  // @TODO: check if we can change the algorithm to use a map of visited vertices to detect infinite loops
   /** Checks if the given `ancestorId` is an ancestor of `childId` in the tree */
   isAncestor(childId: string, ancestorId: string | null): boolean {
     let targetId = childId;
     let vertex: VertexState | undefined;
-    let depth = 0;
+    
+    // Set to track visited vertices and detect cycles
+    const visitedVertices = new Set<string>();
 
     while (vertex = this.state.getVertex(targetId)) {
       if (vertex.parentId === ancestorId) return true;
       if (!vertex.parentId) return false;
-
-      if (depth > this.maxDepth) {
-        console.error(`isAncestor: max depth of ${this.maxDepth} reached. Perhaps, we have an infinite loop here.`);
-        return true;
+      
+      // If we've already visited this vertex, we have a cycle
+      if (visitedVertices.has(targetId)) {
+        console.error(`isAncestor: cycle detected in the tree structure.`);
+        // In the context of tryToMove, we should return false here to prevent the move
+        // since the target ancestor isn't actually in the path (we're in a cycle)
+        return false;
       }
-
+      
+      // Mark this vertex as visited
+      visitedVertices.add(targetId);
+      
       targetId = vertex.parentId;
-      depth++;
     }
 
     return false;
