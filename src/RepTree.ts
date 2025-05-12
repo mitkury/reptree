@@ -506,9 +506,24 @@ export class RepTree {
 
       for (const propA of propertiesA) {
         const propB = propertiesB.find(p => p.key === propA.key);
-        if (!propB || propA.value !== propB.value) {
+        if (!propB) {
           return false;
         }
+      
+        // Special handling for Yjs documents
+        if (propA.value instanceof Y.Doc && propB.value instanceof Y.Doc) {
+          // Create snapshots of the Yjs documents
+          const snapshotA = Y.snapshot(propA.value);
+          const snapshotB = Y.snapshot(propB.value);
+          
+          // Compare the snapshots using Y.equalSnapshots
+          // This properly compares the document structure and content
+          if (!Y.equalSnapshots(snapshotA, snapshotB)) {
+            return false;
+          }
+        } else if (propA.value !== propB.value) {
+          return false;
+        }  
       }
     }
 
