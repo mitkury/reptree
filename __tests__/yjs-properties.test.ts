@@ -22,6 +22,27 @@ describe('Yjs Properties', () => {
     expect(retrievedDoc.getText('default').toString()).toBe('Hello world');
   });
 
+  test('Basic Yjs document property with two inserts after setting a property', () => {
+    const tree = new RepTree('peer1');
+    const root = tree.createRoot();
+
+    // Create a Yjs document
+    const ydoc = new Y.Doc();
+    const ytext = ydoc.getText('default');
+
+    // Set it as a property
+    tree.setVertexProperty(root.id, 'content', ydoc);
+
+    // Make two inserts after setting the property
+    ytext.insert(0, 'Hello ');
+    ytext.insert(ytext.length, 'world');
+
+    // Retrieve and verify
+    const retrievedDoc = tree.getVertexProperty(root.id, 'content') as Y.Doc;
+    expect(retrievedDoc).toBeInstanceOf(Y.Doc);
+    expect(retrievedDoc.getText('default').toString()).toBe('Hello world');
+  });
+
   test('Basic Yjs document property with sync', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();

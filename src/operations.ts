@@ -15,27 +15,22 @@ export interface SetVertexProperty {
   transient: boolean;
 }
 
-export interface ModifyVertexPropertyOp {
-  id: OpId;
-  targetId: string;
-  key: string;
-  crdtType: string;  // e.g., "yjs"
-  value: Uint8Array;  // Binary CRDT update data
-  transient: boolean;
-}
-
-export type VertexOperation = MoveVertex | SetVertexProperty | ModifyVertexPropertyOp;
+export type VertexOperation = MoveVertex | SetVertexProperty;
 
 export function isMoveVertexOp(op: VertexOperation): op is MoveVertex {
   return 'parentId' in op;
 }
 
-export function isSetPropertyOp(op: VertexOperation): op is SetVertexProperty {
-  return 'key' in op && 'value' in op && !('crdtType' in op);
+export function isAnyPropertyOp(op: VertexOperation): op is SetVertexProperty {
+  return 'key' in op;
 }
 
-export function isModifyPropertyOp(op: VertexOperation): op is ModifyVertexPropertyOp {
-  return 'key' in op && 'crdtType' in op;
+export function isLWWPropertyOp(op: VertexOperation): op is SetVertexProperty {
+  return 'key' in op && 'value' in op && (!op.value || typeof op.value !== 'object' || !('type' in op.value));
+}
+
+export function isModifyPropertyOp(op: VertexOperation): op is SetVertexProperty {
+  return 'key' in op && 'value' in op && typeof op.value === 'object' && op.value !== null && 'type' in op.value;
 }
 
 export function newMoveVertexOp(clock: number, peerId: string, targetId: string, parentId: string | null): MoveVertex {
@@ -48,23 +43,4 @@ export function newSetVertexPropertyOp(clock: number, peerId: string, targetId: 
 
 export function newSetTransientVertexPropertyOp(clock: number, peerId: string, targetId: string, key: string, value: VertexPropertyTypeInOperation): SetVertexProperty {
   return { id: new OpId(clock, peerId), targetId, key, value, transient: true };
-}
-
-export function newModifyVertexPropertyOp(
-  clock: number, 
-  peerId: string, 
-  targetId: string, 
-  key: string, 
-  crdtType: string,
-  value: Uint8Array,
-  transient: boolean = false
-): ModifyVertexPropertyOp {
-  return { 
-    id: new OpId(clock, peerId), 
-    targetId, 
-    key, 
-    crdtType, 
-    value, 
-    transient 
-  };
 }
