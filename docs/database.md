@@ -2,8 +2,10 @@
 
 ## Data Orientation and Model
 
-RepTree is a hierarchical, tree-structured, distributed database with the following characteristics:
+RepTree is an in-memory, JavaScript runtime, hierarchical, tree-structured, distributed database with the following characteristics:
 
+- **In-Memory Operation**: All data and operations are held in memory
+- **JavaScript Runtime**: Designed to run in JavaScript/TypeScript environments (browser, Node.js)
 - **Tree-Based Data Model**: Organizes data in a parent-child hierarchy of vertices
 - **Property System**: Each vertex contains key-value properties
 - **Dual Property Types**: Supports both persistent and transient properties
