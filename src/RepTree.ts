@@ -164,12 +164,22 @@ export class RepTree {
     return vertex.getAllProperties();
   }
 
+  /**
+   * Returns all local operations and clears the local operations list.
+   * Can be used to get all operations that were generated from this peer and need to be sent to other peers.
+   */
   popLocalOps(): VertexOperation[] {
     const ops = this.localOps;
     this.localOps = [];
     return ops;
   }
 
+  // @TODO: can we change the approach of checking for infinite loops? Maybe if we build a map of visited vertices - we can use it to detect infinite loops
+  /**
+   * Sets the maximum depth of the tree. 
+   * We need to check whether a vertex is an ancestor of another vertex when we move it to prevent infinite loops.
+   * @param maxDepth The maximum depth of the tree.
+   */
   setMaxDepth(maxDepth: number) {
     this.maxDepth = maxDepth;
   }
@@ -404,6 +414,7 @@ export class RepTree {
     return true;
   }
 
+  // @TODO: check if we can change the algorithm to use a map of visited vertices to detect infinite loops
   /** Checks if the given `ancestorId` is an ancestor of `childId` in the tree */
   isAncestor(childId: string, ancestorId: string | null): boolean {
     let targetId = childId;
