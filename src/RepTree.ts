@@ -620,28 +620,6 @@ export class RepTree {
     this.state.setTransientProperty(op.targetId, op.key, op.value);
     this.reportOpAsApplied(op);
   }
-
-  private applyUpdate(op: ModifyVertexPropertyOp) {
-    const vertexId = op.targetId;
-    const key = op.key;
-    
-    // Update Lamport clock
-    this.updateLamportClock(op);
-    
-    // Get current property value
-    const currentValue = this.getVertexProperty(vertexId, key);
-    
-    // Apply update based on CRDT type
-    if (op.crdtType === "yjs" && currentValue instanceof Y.Doc) {
-      // Apply the update directly to the Y.Doc instance
-      Y.applyUpdate(currentValue, op.value, 'reptree');
-      
-      // Report operation as applied
-      this.reportOpAsApplied(op);
-    } else {
-      console.warn(`Cannot apply ${op.crdtType} update to property of type ${typeof currentValue}`);
-    }
-  }
   
   private setupYjsObserver(doc: Y.Doc, vertexId: string, key: string) {
     // Create a unique key for this property
@@ -659,7 +637,8 @@ export class RepTree {
     // Create and store the new observer
     const observer = (update: Uint8Array, origin: any) => {
       if (origin !== 'reptree') {
-        // Create a CRDTType for the update
+        // Use the incremental update directly
+        // This is important for proper CRDT merging
         const crdtValue: CRDTType = {
           type: "yjs",
           value: update
@@ -675,9 +654,6 @@ export class RepTree {
         );
         
         this.localOps.push(op);
-        
-        // Apply the update to the local Y.Doc
-        Y.applyUpdate(doc, update);
         
         // Update state vector if enabled
         if (this._stateVectorEnabled) {
@@ -814,30 +790,8 @@ export class RepTree {
       this.applyMove(op);
     } else if (isSetPropertyOp(op)) {
       this.applyProperty(op);
-    } else if (isModifyPropertyOp(op)) {
-      // Convert ModifyVertexPropertyOp to SetVertexProperty with CRDTType
-      if (op.crdtType === "yjs") {
-        const crdtValue: CRDTType = {
-          type: "yjs",
-          value: op.value
-        };
-        
-        // Create a SetVertexProperty operation with the CRDTType
-        const setOp: SetVertexProperty = {
-          id: op.id,
-          targetId: op.targetId,
-          key: op.key,
-          value: crdtValue,
-          transient: op.transient
-        };
-        
-        // Apply the converted operation
-        this.applyProperty(setOp);
-      } else {
-        // Fallback to the old method for other CRDT types
-        this.applyUpdate(op);
-      }
     }
+    // We're removing ModifyVertexPropertyOp handling completely
   }
 
   private reportOpAsApplied(op: VertexOperation) {
