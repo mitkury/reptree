@@ -22,7 +22,7 @@ describe('Yjs Properties', () => {
     expect(retrievedDoc.getText('default').toString()).toBe('Hello world');
   });
 
-  test('Basic Yjs document property with two inserts after setting a property', () => {
+  test('Two inserts after setting a property', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
 
@@ -43,7 +43,7 @@ describe('Yjs Properties', () => {
     expect(retrievedDoc.getText('default').toString()).toBe('Hello world');
   });
 
-  test('Basic Yjs document property with sync', () => {
+  test('One insert after setting a property and replication', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
 
@@ -62,6 +62,35 @@ describe('Yjs Properties', () => {
     const retrievedDoc = syncedTree.getVertexProperty(root.id, 'content') as Y.Doc;
     expect(retrievedDoc).toBeInstanceOf(Y.Doc);
     expect(retrievedDoc.getText('default').toString()).toBe('Hello world');
+  });
+
+  test('Multiple inserts, shuffle and replication', () => {
+    const tree = new RepTree('peer1');
+    const root = tree.createRoot();
+
+    // Create a Yjs document
+    const ydoc = new Y.Doc();
+    const ytext = ydoc.getText('default');
+
+    // Set it as a property
+    tree.setVertexProperty(root.id, 'content', ydoc);
+
+    // Make two inserts after setting the property
+    ytext.insert(0, 'Hello ');
+    ytext.insert(ytext.length, 'world');
+    ytext.insert(ytext.length, '!');
+
+    const retrievedDoc = tree.getVertexProperty(root.id, 'content') as Y.Doc;
+    expect(retrievedDoc).toBeInstanceOf(Y.Doc);
+    expect(retrievedDoc.getText('default').toString()).toBe('Hello world!');
+
+    const tree2 = new RepTree('peer2');
+    tree2.merge(tree.getAllOps());
+
+    // Retrieve and verify
+    const retrievedDoc2 = tree2.getVertexProperty(root.id, 'content') as Y.Doc;
+    expect(retrievedDoc2).toBeInstanceOf(Y.Doc);
+    expect(retrievedDoc2.getText('default').toString()).toBe('Hello world!');
   });
 
   test('Collaborative editing between two trees', () => {

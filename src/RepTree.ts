@@ -39,7 +39,7 @@ export class RepTree {
   private setPropertyOps: SetVertexProperty[] = [];
   private propertiesAndTheirOpIds: Map<PropertyKeyAtVertexId, OpId> = new Map();
   private transientPropertiesAndTheirOpIds: Map<PropertyKeyAtVertexId, OpId> = new Map();
-  private yjsObservers: Map<PropertyKeyAtVertexId, (update: Uint8Array, origin: any) => void> = new Map();
+  private yjsObservers: Map<PropertyKeyAtVertexId, (update: Uint8Array, origin: any, doc: Y.Doc, transaction: Y.Transaction) => void> = new Map();
   private localOps: VertexOperation[] = [];
   private pendingMovesWithMissingParent: Map<string, MoveVertex[]> = new Map();
   private pendingPropertiesWithMissingVertex: Map<string, SetVertexProperty[]> = new Map();
@@ -72,7 +72,9 @@ export class RepTree {
       }
 
       // @TODO: validate the tree structure, throw an exception if it's invalid
-    } else {
+    }
+    // @TODO: remove it? It creates an extra null vertex op in every new empty tree. Or is it ok?
+    else {
       this.ensureNullVertex();
     }
   }
@@ -634,7 +636,7 @@ export class RepTree {
     this.applyPendingMovesForParent(op.targetId);
   }
 
-  private setPropertyAndItsOpId(op: SetVertexProperty) {
+  private setLLWPropertyAndItsOpId(op: SetVertexProperty) {
     this.propertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
     this.state.setProperty(op.targetId, op.key, op.value);
     this.reportOpAsApplied(op);
@@ -660,37 +662,41 @@ export class RepTree {
     }
 
     // Create and store the new observer
-    const observer = (update: Uint8Array, origin: any) => {
-      if (origin !== 'reptree') {
-        // Use the incremental update directly
-        // This is important for proper CRDT merging
-        const crdtValue: CRDTType = {
-          type: "yjs",
-          value: update
-        };
+    const ydocObserver = (update: Uint8Array, origin: any, doc: Y.Doc, transaction: Y.Transaction) => {      
+      if (!transaction.local) {
+        return;
+      }
 
-        // Create a SetVertexProperty operation with the CRDTType
-        const op = newSetVertexPropertyOp(
-          this.lamportClock++,
-          this.peerId,
-          vertexId,
-          key,
-          crdtValue
-        );
+      // We create ops when the doc changes.
+      // Only from the same peer
 
-        this.localOps.push(op);
-        this.applyProperty(op);
+      const crdtValue: CRDTType = {
+        type: "yjs",
+        value: update
+      };
 
-        // Update state vector if enabled
-        if (this._stateVectorEnabled) {
-          this.stateVector.updateFromOp(op);
-        }
+      // Create a SetVertexProperty operation with the CRDTType
+      const op = newSetVertexPropertyOp(
+        this.lamportClock++,
+        this.peerId,
+        vertexId,
+        key,
+        crdtValue
+      );
+
+      this.localOps.push(op);
+      this.applyProperty(op);
+
+      // @TODO: should we remove it and only update form applyProperty
+      // Update state vector if enabled
+      if (this._stateVectorEnabled) {
+        this.stateVector.updateFromOp(op);
       }
     };
 
     // Register the observer
-    doc.on('update', observer);
-    this.yjsObservers.set(propertyKey, observer);
+    doc.on('update', ydocObserver);
+    this.yjsObservers.set(propertyKey, ydocObserver);
   }
 
   private applyProperty(op: SetVertexProperty) {
@@ -717,69 +723,6 @@ export class RepTree {
     } else {
       this.applyLLWProperty(op, targetVertex);
     }
-
-    /*
-    if (!op.transient) {
-      this.setPropertyOps.push(op);
-
-      // First check if the op is LWW or a modify op
-      if (opIsModifyOp) {
-        const crdtValue = op.value as CRDTType;
-
-        if (crdtValue.type === "yjs") {
-          // Handle Yjs document
-          if (prevProp instanceof Y.Doc) {
-            // Apply update to existing Y.Doc
-            Y.applyUpdate(prevProp, crdtValue.value, 'reptree');
-
-            this.propertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
-            this.reportOpAsApplied(op);
-          } else {
-            // Create new Y.Doc
-            const newDoc = new Y.Doc();
-            Y.applyUpdate(newDoc, crdtValue.value);
-
-            this.setupYjsObserver(newDoc, op.targetId, op.key);
-            targetVertex.setProperty(op.key, newDoc);
-
-            this.propertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
-
-            // Report the operation as applied
-            this.reportOpAsApplied(op);
-          }
-        } else {
-          // Unknown CRDT type, just pass through
-          this.setPropertyAndItsOpId(op);
-        }
-      } else {
-        // Apply the property if it's not already applied or if the current op is newer
-        // This is the last writer wins approach that ensures the same state between replicas.
-        if (!prevProp || !prevOpId || op.id.isGreaterThan(prevOpId)) {
-          this.setPropertyAndItsOpId(op);
-        } else {
-          // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
-          // if we ever receive the same op from another peer.
-          this.knownOps.add(op.id.toString());
-        }
-      }
-
-      // Remove the transient property if the current op is greater
-      if (prevTransientOpId && op.id.isGreaterThan(prevTransientOpId)) {
-        this.transientPropertiesAndTheirOpIds.delete(`${op.key}@${op.targetId}`);
-        targetVertex.removeTransientProperty(op.key);
-      }
-
-    } else {
-      if (opIsModifyOp) {
-        console.warn("Not implemented: transient non LWW property")
-      }
-
-      // Handle transient properties
-      if (!prevTransientOpId || op.id.isGreaterThan(prevTransientOpId)) {
-        this.setTransientPropertyAndItsOpId(op);
-      }
-    }
-    */
   }
 
   private applyLLWProperty(op: SetVertexProperty, targetVertex: VertexState) {
@@ -793,7 +736,7 @@ export class RepTree {
       // Apply the property if it's not already applied or if the current op is newer
       // This is the last writer wins approach that ensures the same state between replicas.
       if (!prevProp || !prevOpId || op.id.isGreaterThan(prevOpId)) {
-        this.setPropertyAndItsOpId(op);
+        this.setLLWPropertyAndItsOpId(op);
       } else {
         // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
         // if we ever receive the same op from another peer.
@@ -831,22 +774,22 @@ export class RepTree {
 
     if (ydoc instanceof Y.Doc) {
       // Apply update to existing Y.Doc
-      Y.applyUpdate(ydoc, crdtValue.value, 'reptree');
-      this.propertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
-      this.reportOpAsApplied(op);
+      Y.applyUpdate(ydoc, crdtValue.value);
     } else {
-      // Create new Y.Doc
+      // Create new Y.Doc, and apply an update
       const newDoc = new Y.Doc();
-      Y.applyUpdate(newDoc, crdtValue.value);
-
+      // Setup an observer so we can automatically create ops when the doc changes
       this.setupYjsObserver(newDoc, op.targetId, op.key);
-      targetVertex.setProperty(op.key, newDoc);
-
-      this.propertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
-
-      // Report the operation as applied
-      this.reportOpAsApplied(op);
+      // Set the new doc as a property on the vertex
+      this.state.setProperty(op.targetId, op.key, newDoc);
+      // And finally, apply the update to the new doc
+      Y.applyUpdate(newDoc, crdtValue.value);
     }
+
+    this.propertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
+    this.reportOpAsApplied(op);
+
+    // @TODO: should we update state vector here?
   }
 
   private applyOperation(op: VertexOperation) {
