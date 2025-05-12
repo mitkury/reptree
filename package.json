@@ -24,11 +24,6 @@
     "test-without-build": "vitest run",
     "test": "npm run build && vitest run",
     "test:watch": "vitest",
-    "test:basic": "vitest run --run basic-usage",
-    "test:fuzzy": "vitest run --run fuzzy",
-    "test:vector": "vitest run --run state-vector-sync",
-    "test:comparison": "vitest run --run comparison",
-    "test:coverage": "vitest run --coverage",
     "example": "npm run build && node --loader ts-node/esm examples/basic-usage.ts",
     "prepublishOnly": "npm run build"
   },

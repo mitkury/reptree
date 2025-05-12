@@ -13,4 +13,4 @@ export * from './treeTypes';
 export * from './operations';
 
 // Utilities
-export { default as uuid } from './uuid'; 
+export { default as uuid } from './uuid';

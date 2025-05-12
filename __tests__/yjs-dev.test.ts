@@ -42,9 +42,6 @@ test('Replication', () => {
 
   ytext.insert(0, 'Hello, world!');
 
-  // createTreeFromOps(ops)
-  // duplicateTree(tree)
-
   const retrievedDoc = tree.getVertexProperty(root.id, 'content') as Y.Doc;
   expect(retrievedDoc).toBeInstanceOf(Y.Doc);
   expect(retrievedDoc.getText('default').toString()).toBe('Hello, world!');
@@ -56,4 +53,15 @@ test('Replication', () => {
   const retrievedDoc2 = tree2.getVertexProperty(root.id, 'content') as Y.Doc;
   expect(retrievedDoc2).toBeInstanceOf(Y.Doc);
   expect(retrievedDoc2.getText('default').toString()).toBe('Hello, world!');
+
+
+  // Same as with the last but reversed
+  const reversedOps = [...tree.getAllOps()].reverse();
+
+  const tree3 = new RepTree('peer3');
+  tree3.merge(reversedOps);
+
+  const retrievedDoc3 = tree3.getVertexProperty(root.id, 'content') as Y.Doc;
+  expect(retrievedDoc3).toBeInstanceOf(Y.Doc);
+  expect(retrievedDoc3.getText('default').toString()).toBe('Hello, world!');
 });

@@ -100,6 +100,10 @@ export class RepTree {
     return new Vertex(this, rootVertex);
   }
 
+  replicate(newPeerId: string): RepTree {
+    return new RepTree(newPeerId, this.getAllOps());
+  }
+
   getMoveOps(): ReadonlyArray<MoveVertex> {
     return this.moveOps;
   }
@@ -937,4 +941,3 @@ export class RepTree {
     }
   }
 }
-
