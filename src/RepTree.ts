@@ -675,9 +675,11 @@ export class RepTree {
         value: update
       };
 
+      this.lamportClock++;
+
       // Create a SetVertexProperty operation with the CRDTType
       const op = newSetVertexPropertyOp(
-        this.lamportClock++,
+        this.lamportClock,
         this.peerId,
         vertexId,
         key,
