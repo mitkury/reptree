@@ -21,13 +21,9 @@
     "prebuild": "rm -rf dist",
     "build": "tsup",
     "dev": "tsup --watch",
-    "test-without-build": "vitest run",
-    "test": "npm run build && vitest run",
-    "test:watch": "vitest",
+    "pretest": "npm run build",
+    "test": "vitest",
     "bench": "vitest bench",
-    "bench:watch": "vitest bench --watch",
-    "bench:json": "vitest bench --json bench-results.json",
-    "example": "npm run build && node --loader ts-node/esm examples/basic-usage.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
