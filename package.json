@@ -23,7 +23,6 @@
     "dev": "tsup --watch",
     "pretest": "npm run build",
     "test": "vitest",
-    "bench": "vitest bench",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
