@@ -3,8 +3,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
-use uuid::Uuid;
-use yrs::Doc as YDoc;
+// These imports will be needed later for Yjs integration
+// use uuid::Uuid;
+// use yrs::Doc as YDoc;
 
 /// Result type for RepTree operations
 pub type Result<T> = std::result::Result<T, Error>;

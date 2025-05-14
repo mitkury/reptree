@@ -1,14 +1,13 @@
 //! SQLite storage implementation for RepTree
 
 use crate::types::{
-    EncodedVertex, Error, MoveVertex, Result, ScanOptions, SetVertexProperty, StorageError, VertexId,
+    EncodedVertex, MoveVertex, Result, ScanOptions, SetVertexProperty, StorageError, VertexId,
 };
 use async_trait::async_trait;
 use futures::{stream, Stream, StreamExt};
 use rusqlite::{params, Connection, OptionalExtension, types::Type};
-use serde_json::Value;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
 /// SQLite storage implementation for RepTree
@@ -101,7 +100,7 @@ impl super::VertexStore for SqliteStorage {
                     
                     let properties = match serde_json::from_str(&payload) {
                         Ok(props) => props,
-                        Err(e) => return Err(rusqlite::Error::InvalidColumnType(2, "JSON".into(), Type::Text)),
+                        Err(_) => return Err(rusqlite::Error::InvalidColumnType(2, "JSON".into(), Type::Text)),
                     };
                     
                     Ok(EncodedVertex {
@@ -179,8 +178,6 @@ impl super::VertexStore for SqliteStorage {
                 result.push(row.map_err(StorageError::Sqlite)?);
             }
         }
-        
-
         
         Ok(result)
     }
@@ -265,17 +262,14 @@ impl super::LogStore<MoveVertex> for SqliteStorage {
         let stream = stream::unfold(
             (conn, query, params, 0),
             |(conn, query, params, offset)| async move {
-                let mut conn_guard = match conn.lock().await {
-                    Ok(guard) => guard,
-                    Err(_) => return None,
-                };
+                let conn_guard = conn.lock().await;
                 
                 let mut stmt = match conn_guard.prepare(&query) {
                     Ok(stmt) => stmt,
                     Err(_) => return None,
                 };
                 
-                let mut param_refs: Vec<&dyn rusqlite::ToSql> = params
+                let param_refs: Vec<&dyn rusqlite::ToSql> = params
                     .iter()
                     .map(|p| p as &dyn rusqlite::ToSql)
                     .collect();
@@ -405,17 +399,14 @@ impl super::LogStore<SetVertexProperty> for SqliteStorage {
         let stream = stream::unfold(
             (conn, query, params, 0),
             |(conn, query, params, offset)| async move {
-                let mut conn_guard = match conn.lock().await {
-                    Ok(guard) => guard,
-                    Err(_) => return None,
-                };
+                let conn_guard = conn.lock().await;
                 
                 let mut stmt = match conn_guard.prepare(&query) {
                     Ok(stmt) => stmt,
                     Err(_) => return None,
                 };
                 
-                let mut param_refs: Vec<&dyn rusqlite::ToSql> = params
+                let param_refs: Vec<&dyn rusqlite::ToSql> = params
                     .iter()
                     .map(|p| p as &dyn rusqlite::ToSql)
                     .collect();

@@ -49,29 +49,8 @@ impl TreeState {
     
     /// Apply a move operation to the tree state
     pub fn apply_move(&mut self, op: &MoveVertex) {
-        // Check if the target vertex already exists
-        let vertex = if let Some(vertex) = self.vertices.get_mut(&op.target_id) {
-            // Update the parent ID
-            vertex.parent_id = op.parent_id.clone();
-            vertex
-        } else {
-            // Create a new vertex
-            let vertex = EncodedVertex {
-                id: op.target_id.clone(),
-                parent_id: op.parent_id.clone(),
-                idx: 0, // We'll update this later
-                properties: HashMap::new(),
-            };
-            
-            self.vertices.insert(op.target_id.clone(), vertex);
-            self.vertices.get_mut(&op.target_id).unwrap()
-        };
-        
-        // Mark the vertex as dirty
-        self.dirty.insert(op.target_id.clone());
-        
-        // Update the index
-        if let Some(parent_id) = &op.parent_id {
+        // First, calculate the new index if needed
+        let new_idx = if let Some(parent_id) = &op.parent_id {
             // Get the highest index among siblings
             let max_idx = self.vertices
                 .values()
@@ -80,11 +59,31 @@ impl TreeState {
                 .max()
                 .unwrap_or(0);
             
-            vertex.idx = max_idx + 1;
+            max_idx + 1
         } else {
             // Root vertices have index 0
-            vertex.idx = 0;
+            0
+        };
+        
+        // Now update or create the vertex
+        if let Some(vertex) = self.vertices.get_mut(&op.target_id) {
+            // Update the parent ID
+            vertex.parent_id = op.parent_id.clone();
+            vertex.idx = new_idx;
+        } else {
+            // Create a new vertex
+            let vertex = EncodedVertex {
+                id: op.target_id.clone(),
+                parent_id: op.parent_id.clone(),
+                idx: new_idx,
+                properties: HashMap::new(),
+            };
+            
+            self.vertices.insert(op.target_id.clone(), vertex);
         }
+        
+        // Mark the vertex as dirty
+        self.dirty.insert(op.target_id.clone());
     }
     
     /// Apply a batch of move operations

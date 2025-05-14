@@ -2,9 +2,9 @@
 //! 
 //! This module provides storage adapters for persisting RepTree data.
 
-mod sqlite;
+mod sqlite_fixed2;
 
-pub use self::sqlite::SqliteStorage;
+pub use self::sqlite_fixed2::SqliteStorage;
 use crate::types::{EncodedVertex, MoveVertex, Result, ScanOptions, SetVertexProperty, VertexId};
 use async_trait::async_trait;
 use futures::stream::BoxStream;
@@ -50,7 +50,7 @@ pub trait LogStore<T>: Send + Sync {
     async fn latest_seq(&self) -> Result<u64>;
     
     /// Scan a range of operations
-    async fn scan_range(&self, opts: ScanOptions) -> BoxStream<'_, Result<T>>;
+    async fn scan_range(&self, opts: ScanOptions) -> BoxStream<'static, Result<T>>;
 }
 
 /// Combined storage for RepTree

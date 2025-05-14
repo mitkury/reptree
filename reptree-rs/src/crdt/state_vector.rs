@@ -3,7 +3,7 @@
 //! This module provides a range-based state vector implementation for tracking
 //! which operations have been applied across peers.
 
-use crate::types::{OpId, Range};
+use crate::types::Range;
 use std::collections::HashMap;
 
 /// State vector for tracking applied operations
@@ -105,7 +105,9 @@ impl StateVector {
         // For each peer in our state vector
         for (peer_id, our_ranges) in &self.ranges {
             // Get the ranges for this peer in the other state vector
-            let their_ranges = other.ranges.get(peer_id).unwrap_or(&Vec::new());
+            // Create an empty vector to use as default if the peer doesn't exist in their state
+            let empty_ranges = Vec::new();
+            let their_ranges = other.ranges.get(peer_id).unwrap_or(&empty_ranges);
             
             // Calculate the ranges we have that they don't
             for our_range in our_ranges {

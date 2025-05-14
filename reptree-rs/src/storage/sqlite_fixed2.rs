@@ -1,14 +1,13 @@
 //! SQLite storage implementation for RepTree
 
 use crate::types::{
-    EncodedVertex, Error, MoveVertex, Result, ScanOptions, SetVertexProperty, StorageError, VertexId,
+    EncodedVertex, MoveVertex, Result, ScanOptions, SetVertexProperty, StorageError, VertexId,
 };
 use async_trait::async_trait;
 use futures::{stream, Stream, StreamExt};
 use rusqlite::{params, Connection, OptionalExtension, types::Type};
-use serde_json::Value;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
 /// SQLite storage implementation for RepTree
@@ -101,7 +100,7 @@ impl super::VertexStore for SqliteStorage {
                     
                     let properties = match serde_json::from_str(&payload) {
                         Ok(props) => props,
-                        Err(e) => return Err(rusqlite::Error::InvalidColumnType(2, "JSON".into(), Type::Text)),
+                        Err(_) => return Err(rusqlite::Error::InvalidColumnType(2, "JSON".into(), Type::Text)),
                     };
                     
                     Ok(EncodedVertex {
@@ -180,8 +179,6 @@ impl super::VertexStore for SqliteStorage {
             }
         }
         
-
-        
         Ok(result)
     }
 }
@@ -224,102 +221,88 @@ impl super::LogStore<MoveVertex> for SqliteStorage {
     }
     
     async fn scan_range(&self, opts: ScanOptions) -> Pin<Box<dyn Stream<Item = Result<MoveVertex>> + Send + 'static>> {
-        let conn = self.conn.clone();
+        // We'll use a simpler approach that doesn't have borrowing issues
+        // First, we'll execute the query and collect all results
+        let conn_clone = self.conn.clone();
         
-        // Build the query based on options
-        let mut query = "SELECT seq, peer_id, counter, target_id, parent_id, timestamp FROM rt_move_ops".to_string();
-        let mut conditions = Vec::new();
-        let mut params = Vec::new();
-        
-        if let Some(peer_id) = &opts.peer_id {
-            conditions.push("peer_id = ?");
-            params.push(peer_id.clone());
-        }
-        
-        if let Some(from) = opts.from_seq {
-            conditions.push("seq >= ?");
-            params.push(from.to_string());
-        }
-        
-        if let Some(to) = opts.to_seq {
-            conditions.push("seq <= ?");
-            params.push(to.to_string());
-        }
-        
-        if !conditions.is_empty() {
-            query.push_str(" WHERE ");
-            query.push_str(&conditions.join(" AND "));
-        }
-        
-        query.push_str(" ORDER BY seq");
-        if opts.reverse {
-            query.push_str(" DESC");
-        }
-        
-        if let Some(limit) = opts.limit {
-            query.push_str(" LIMIT ");
-            query.push_str(&limit.to_string());
-        }
-        
-        // Create a stream of results
-        let stream = stream::unfold(
-            (conn, query, params, 0),
-            |(conn, query, params, offset)| async move {
-                let mut conn_guard = match conn.lock().await {
-                    Ok(guard) => guard,
-                    Err(_) => return None,
-                };
+        Box::pin(stream::once(async move {
+            let conn = conn_clone.lock().await;
+            
+            // Build the query based on options
+            let mut query = "SELECT seq, peer_id, counter, target_id, parent_id, timestamp FROM rt_move_ops".to_string();
+            let mut conditions = Vec::new();
+            let mut params = Vec::new();
+            
+            if let Some(peer_id) = &opts.peer_id {
+                conditions.push("peer_id = ?");
+                params.push(peer_id.clone());
+            }
+            
+            if let Some(from) = opts.from_seq {
+                conditions.push("seq >= ?");
+                params.push(from.to_string());
+            }
+            
+            if let Some(to) = opts.to_seq {
+                conditions.push("seq <= ?");
+                params.push(to.to_string());
+            }
+            
+            if !conditions.is_empty() {
+                query.push_str(" WHERE ");
+                query.push_str(&conditions.join(" AND "));
+            }
+            
+            query.push_str(" ORDER BY seq");
+            if opts.reverse {
+                query.push_str(" DESC");
+            }
+            
+            if let Some(limit) = opts.limit {
+                query.push_str(" LIMIT ");
+                query.push_str(&limit.to_string());
+            }
+            
+            // Execute the query and collect all results
+            let mut stmt = match conn.prepare(&query) {
+                Ok(stmt) => stmt,
+                Err(e) => return stream::iter(vec![Err(StorageError::Sqlite(e).into())]),
+            };
+            
+            let param_refs: Vec<&dyn rusqlite::ToSql> = params
+                .iter()
+                .map(|p| p as &dyn rusqlite::ToSql)
+                .collect();
+            
+            let rows = match stmt.query(param_refs.as_slice()) {
+                Ok(rows) => rows,
+                Err(e) => return stream::iter(vec![Err(StorageError::Sqlite(e).into())]),
+            };
+            
+            let mut ops = Vec::new();
+            for row_result in rows.mapped(|row| {
+                let _seq: i64 = row.get(0)?;
+                let peer_id: String = row.get(1)?;
+                let counter: i64 = row.get(2)?;
+                let target_id: String = row.get(3)?;
+                let parent_id: Option<String> = row.get(4)?;
+                let timestamp: i64 = row.get(5)?;
                 
-                let mut stmt = match conn_guard.prepare(&query) {
-                    Ok(stmt) => stmt,
-                    Err(_) => return None,
-                };
-                
-                let mut param_refs: Vec<&dyn rusqlite::ToSql> = params
-                    .iter()
-                    .map(|p| p as &dyn rusqlite::ToSql)
-                    .collect();
-                
-                let rows = match stmt.query(param_refs.as_slice()) {
-                    Ok(rows) => rows,
-                    Err(_) => return None,
-                };
-                
-                let mut ops = Vec::new();
-                for row_result in rows.mapped(|row| {
-                    let _seq: i64 = row.get(0)?;
-                    let peer_id: String = row.get(1)?;
-                    let counter: i64 = row.get(2)?;
-                    let target_id: String = row.get(3)?;
-                    let parent_id: Option<String> = row.get(4)?;
-                    let timestamp: i64 = row.get(5)?;
-                    
-                    Ok(MoveVertex {
-                        id: crate::types::OpId::new(peer_id, counter as u64),
-                        target_id,
-                        parent_id,
-                        timestamp: timestamp as u64,
-                    })
-                }) {
-                    match row_result {
-                        Ok(op) => ops.push(op),
-                        Err(_) => continue,
-                    }
+                Ok(MoveVertex {
+                    id: crate::types::OpId::new(peer_id, counter as u64),
+                    target_id,
+                    parent_id,
+                    timestamp: timestamp as u64,
+                })
+            }) {
+                match row_result {
+                    Ok(op) => ops.push(Ok(op)),
+                    Err(e) => ops.push(Err(StorageError::Sqlite(e).into())),
                 }
-                
-                if ops.is_empty() {
-                    None
-                } else {
-                    Some((
-                        stream::iter(ops.into_iter().map(Ok)),
-                        (conn, query, params, offset + ops.len()),
-                    ))
-                }
-            },
-        )
-        .flatten();
-        
-        Box::pin(stream)
+            }
+            
+            stream::iter(ops)
+        }).flatten())
     }
 }
 
@@ -364,106 +347,94 @@ impl super::LogStore<SetVertexProperty> for SqliteStorage {
     }
     
     async fn scan_range(&self, opts: ScanOptions) -> Pin<Box<dyn Stream<Item = Result<SetVertexProperty>> + Send + 'static>> {
-        let conn = self.conn.clone();
+        // We'll use a simpler approach that doesn't have borrowing issues
+        // First, we'll execute the query and collect all results
+        let conn_clone = self.conn.clone();
         
-        // Build the query based on options
-        let mut query = "SELECT seq, peer_id, counter, target_id, key, value, transient FROM rt_prop_ops".to_string();
-        let mut conditions = Vec::new();
-        let mut params = Vec::new();
-        
-        if let Some(peer_id) = &opts.peer_id {
-            conditions.push("peer_id = ?");
-            params.push(peer_id.clone());
-        }
-        
-        if let Some(from) = opts.from_seq {
-            conditions.push("seq >= ?");
-            params.push(from.to_string());
-        }
-        
-        if let Some(to) = opts.to_seq {
-            conditions.push("seq <= ?");
-            params.push(to.to_string());
-        }
-        
-        if !conditions.is_empty() {
-            query.push_str(" WHERE ");
-            query.push_str(&conditions.join(" AND "));
-        }
-        
-        query.push_str(" ORDER BY seq");
-        if opts.reverse {
-            query.push_str(" DESC");
-        }
-        
-        if let Some(limit) = opts.limit {
-            query.push_str(" LIMIT ");
-            query.push_str(&limit.to_string());
-        }
-        
-        // Create a stream of results
-        let stream = stream::unfold(
-            (conn, query, params, 0),
-            |(conn, query, params, offset)| async move {
-                let mut conn_guard = match conn.lock().await {
-                    Ok(guard) => guard,
-                    Err(_) => return None,
+        Box::pin(stream::once(async move {
+            let conn = conn_clone.lock().await;
+            
+            // Build the query based on options
+            let mut query = "SELECT seq, peer_id, counter, target_id, key, value, transient FROM rt_prop_ops".to_string();
+            let mut conditions = Vec::new();
+            let mut params = Vec::new();
+            
+            if let Some(peer_id) = &opts.peer_id {
+                conditions.push("peer_id = ?");
+                params.push(peer_id.clone());
+            }
+            
+            if let Some(from) = opts.from_seq {
+                conditions.push("seq >= ?");
+                params.push(from.to_string());
+            }
+            
+            if let Some(to) = opts.to_seq {
+                conditions.push("seq <= ?");
+                params.push(to.to_string());
+            }
+            
+            if !conditions.is_empty() {
+                query.push_str(" WHERE ");
+                query.push_str(&conditions.join(" AND "));
+            }
+            
+            query.push_str(" ORDER BY seq");
+            if opts.reverse {
+                query.push_str(" DESC");
+            }
+            
+            if let Some(limit) = opts.limit {
+                query.push_str(" LIMIT ");
+                query.push_str(&limit.to_string());
+            }
+            
+            // Execute the query and collect all results
+            let mut stmt = match conn.prepare(&query) {
+                Ok(stmt) => stmt,
+                Err(e) => return stream::iter(vec![Err(StorageError::Sqlite(e).into())]),
+            };
+            
+            let param_refs: Vec<&dyn rusqlite::ToSql> = params
+                .iter()
+                .map(|p| p as &dyn rusqlite::ToSql)
+                .collect();
+            
+            let rows = match stmt.query(param_refs.as_slice()) {
+                Ok(rows) => rows,
+                Err(e) => return stream::iter(vec![Err(StorageError::Sqlite(e).into())]),
+            };
+            
+            let mut ops = Vec::new();
+            for row_result in rows.mapped(|row| {
+                let _seq: i64 = row.get(0)?;
+                let peer_id: String = row.get(1)?;
+                let counter: i64 = row.get(2)?;
+                let target_id: String = row.get(3)?;
+                let key: String = row.get(4)?;
+                let value_str: String = row.get(5)?;
+                let transient: i64 = row.get(6)?;
+                
+                let value = match serde_json::from_str(&value_str) {
+                    Ok(v) => v,
+                    Err(_) => return Err(rusqlite::Error::InvalidColumnType(5, "JSON".into(), Type::Text)),
                 };
                 
-                let mut stmt = match conn_guard.prepare(&query) {
-                    Ok(stmt) => stmt,
-                    Err(_) => return None,
-                };
-                
-                let mut param_refs: Vec<&dyn rusqlite::ToSql> = params
-                    .iter()
-                    .map(|p| p as &dyn rusqlite::ToSql)
-                    .collect();
-                
-                let rows = match stmt.query(param_refs.as_slice()) {
-                    Ok(rows) => rows,
-                    Err(_) => return None,
-                };
-                
-                let mut ops = Vec::new();
-                for row_result in rows.mapped(|row| {
-                    let _seq: i64 = row.get(0)?;
-                    let peer_id: String = row.get(1)?;
-                    let counter: i64 = row.get(2)?;
-                    let target_id: String = row.get(3)?;
-                    let key: String = row.get(4)?;
-                    let value_str: String = row.get(5)?;
-                    let transient: i64 = row.get(6)?;
-                    
-                    let value = serde_json::from_str(&value_str)
-                        .map_err(|_| rusqlite::Error::InvalidColumnType(5, "JSON".into(), Type::Text))?;
-                    
-                    Ok(SetVertexProperty {
-                        id: crate::types::OpId::new(peer_id, counter as u64),
-                        target_id,
-                        key,
-                        value,
-                        transient: transient != 0,
-                    })
-                }) {
-                    match row_result {
-                        Ok(op) => ops.push(op),
-                        Err(_) => continue,
-                    }
+                Ok(SetVertexProperty {
+                    id: crate::types::OpId::new(peer_id, counter as u64),
+                    target_id,
+                    key,
+                    value,
+                    transient: transient != 0,
+                })
+            }) {
+                match row_result {
+                    Ok(op) => ops.push(Ok(op)),
+                    Err(e) => ops.push(Err(StorageError::Sqlite(e).into())),
                 }
-                
-                if ops.is_empty() {
-                    None
-                } else {
-                    Some((
-                        stream::iter(ops.into_iter().map(Ok)),
-                        (conn, query, params, offset + ops.len()),
-                    ))
-                }
-            },
-        )
-        .flatten();
-        
-        Box::pin(stream)
+            }
+            
+            stream::iter(ops)
+        }).flatten())
     }
 }

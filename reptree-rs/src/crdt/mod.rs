@@ -6,15 +6,16 @@ mod state_vector;
 mod tree_state;
 
 pub use state_vector::StateVector;
-pub use tree_state::TreeState;
+// pub use tree_state::TreeState;
 
 use crate::storage::{Storage, StorageConfig};
 use crate::types::{
     EncodedVertex, Error, MoveVertex, OpId, Range, Result, ScanOptions, SetVertexProperty,
     VertexId, VertexOperation, VertexPropertyType,
 };
+use futures::StreamExt;
 use lru::LruCache;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
