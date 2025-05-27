@@ -742,7 +742,6 @@ export class RepTree {
 
   private applyLLWProperty(op: SetVertexProperty, targetVertex: VertexState) {
     const prevTransientOpId = this.transientPropertiesAndTheirOpIds.get(`${op.key}@${op.targetId}`);
-    const prevProp = targetVertex.getProperty(op.key);
     const prevOpId = this.propertiesAndTheirOpIds.get(`${op.key}@${op.targetId}`);
 
     if (!op.transient) {
@@ -750,7 +749,7 @@ export class RepTree {
 
       // Apply the property if it's not already applied or if the current op is newer
       // This is the last writer wins approach that ensures the same state between replicas.
-      if (!prevProp || !prevOpId || op.id.isGreaterThan(prevOpId)) {
+      if (!prevOpId || op.id.isGreaterThan(prevOpId)) {
         this.setLLWPropertyAndItsOpId(op);
       } else {
         // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
