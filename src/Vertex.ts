@@ -1,6 +1,6 @@
 import type { VertexState } from "./VertexState";
 import type { RepTree } from "./RepTree";
-import type { TreeVertexProperty, VertexChangeEvent, VertexPropertyType } from "./treeTypes";
+import type { VertexChangeEvent, VertexPropertyType } from "./treeTypes";
 
 /**
  * A wrapper class for VertexState that provides a more convenient API
