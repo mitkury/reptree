@@ -1,58 +1,60 @@
-export class OpId {
-  constructor(
-    readonly counter: number,
-    readonly peerId: string
-  ) { }
+export interface OpId {
+  readonly counter: number;
+  readonly peerId: string;
+}
 
-  static compare(opIdA: OpId | string, opIdB: OpId | string): number {
-    if (!(opIdA instanceof OpId)) {
-      const parsedA = OpId.tryParseStr(opIdA);
-      if (!parsedA) throw new Error(`Invalid OpId string: ${opIdA}`);
-      opIdA = parsedA;
-    }
-    if (!(opIdB instanceof OpId)) {
-      const parsedB = OpId.tryParseStr(opIdB);
-      if (!parsedB) throw new Error(`Invalid OpId string: ${opIdB}`);
-      opIdB = parsedB;
-    }
+export function createOpId(counter: number, peerId: string): OpId {
+  return { counter, peerId };
+}
 
-    const counterA = opIdA.counter;
-    const counterB = opIdB.counter;
-
-    if (counterA > counterB) {
-      return 1;
-    } else if (counterA < counterB) {
-      return -1;
-    } else {
-      return opIdA.peerId.localeCompare(opIdB.peerId);
-    }
+export function compareOpId(opIdA: OpId | string, opIdB: OpId | string): number {
+  if (typeof opIdA === 'string') {
+    const parsedA = tryParseOpIdStr(opIdA);
+    if (!parsedA) throw new Error(`Invalid OpId string: ${opIdA}`);
+    opIdA = parsedA;
+  }
+  if (typeof opIdB === 'string') {
+    const parsedB = tryParseOpIdStr(opIdB);
+    if (!parsedB) throw new Error(`Invalid OpId string: ${opIdB}`);
+    opIdB = parsedB;
   }
 
-  static equals(opIdA: OpId | string | null, opIdB: OpId | string | null): boolean {
-    if (opIdA === opIdB) {
-      return true;
-    } else if (!opIdA || !opIdB) {
-      return false;
-    }
+  const counterA = opIdA.counter;
+  const counterB = opIdB.counter;
 
-    return OpId.compare(opIdA, opIdB) === 0;
+  if (counterA > counterB) {
+    return 1;
+  } else if (counterA < counterB) {
+    return -1;
+  } else {
+    return opIdA.peerId.localeCompare(opIdB.peerId);
+  }
+}
+
+export function equalsOpId(opIdA: OpId | string | null, opIdB: OpId | string | null): boolean {
+  if (opIdA === opIdB) {
+    return true;
+  } else if (!opIdA || !opIdB) {
+    return false;
   }
 
-  static tryParseStr(opIdStr: string): OpId {
-    const parts = opIdStr.split('@');
+  return compareOpId(opIdA, opIdB) === 0;
+}
 
-    if (parts.length !== 2) {
-      throw new Error(`Invalid OpId string: ${opIdStr}`);
-    }
+export function tryParseOpIdStr(opIdStr: string): OpId {
+  const parts = opIdStr.split('@');
 
-    return new OpId(parseInt(parts[0], 10), parts[1]);
-  }
-  
-  isGreaterThan(opId: OpId | string): boolean {
-    return OpId.compare(this, opId) === 1;
+  if (parts.length !== 2) {
+    throw new Error(`Invalid OpId string: ${opIdStr}`);
   }
 
-  toString(): string {
-    return `${this.counter}@${this.peerId}`;
-  }
+  return createOpId(parseInt(parts[0], 10), parts[1]);
+}
+
+export function isOpIdGreaterThan(opIdA: OpId | string, opIdB: OpId | string): boolean {
+  return compareOpId(opIdA, opIdB) === 1;
+}
+
+export function opIdToString(opId: OpId): string {
+  return `${opId.counter}@${opId.peerId}`;
 }

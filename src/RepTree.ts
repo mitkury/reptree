@@ -12,7 +12,7 @@ import {
 import type { VertexPropertyType, VertexPropertyTypeInOperation, CRDTType, TreeVertexProperty, VertexChangeEvent, TreeVertexId, VertexMoveEvent } from "./treeTypes";
 import { VertexState } from "./VertexState";
 import { TreeState } from "./TreeState";
-import { OpId } from "./OpId";
+import { type OpId, compareOpId, equalsOpId, isOpIdGreaterThan, opIdToString } from "./OpId";
 import uuid from "./uuid";
 import { Vertex } from './Vertex';
 import { StateVector } from './StateVector';
@@ -348,7 +348,7 @@ export class RepTree {
     for (const op of ops) {
       // We skip the operation if we already know about it.
       // This is to avoid processing the same operation multiple times.
-      if (this.knownOps.has(op.id.toString())) {
+      if (this.knownOps.has(opIdToString(op.id))) {
         continue;
       }
 
@@ -358,13 +358,13 @@ export class RepTree {
 
   /** Applies operations in an optimized way, sorting move ops by OpId to avoid undo-do-redo cycles */
   private applyOpsOptimizedForLotsOfMoves(ops: ReadonlyArray<VertexOperation>) {
-    const newMoveOps = ops.filter(op => isMoveVertexOp(op) && !this.knownOps.has(op.id.toString()));
+    const newMoveOps = ops.filter(op => isMoveVertexOp(op) && !this.knownOps.has(opIdToString(op.id)));
     if (newMoveOps.length > 0) {
       // Get an array of all move ops (without already applied ones)
       const allMoveOps = [...this.moveOps, ...newMoveOps] as MoveVertex[];
       // The main point of this optimization is to apply the moves without undo-do-redo cycles (the conflict resolution algorithm).
       // That is why we sort by OpId.
-      allMoveOps.sort((a, b) => OpId.compare(a.id, b.id));
+      allMoveOps.sort((a, b) => compareOpId(a.id, b.id));
       for (let i = 0, len = allMoveOps.length; i < len; i++) {
         const op = allMoveOps[i];
         this.applyMove(op);
@@ -372,7 +372,7 @@ export class RepTree {
     }
 
     // Get an array of all property ops (without already applied ones)
-    const propertyOps = ops.filter(op => isAnyPropertyOp(op) && !this.knownOps.has(op.id.toString()));
+    const propertyOps = ops.filter(op => isAnyPropertyOp(op) && !this.knownOps.has(opIdToString(op.id)));
     for (let i = 0, len = propertyOps.length; i < len; i++) {
       const op = propertyOps[i];
       this.applyProperty(op as SetVertexProperty);
@@ -400,7 +400,7 @@ export class RepTree {
     }
 
     for (let i = 0; i < movesA.length; i++) {
-      if (!OpId.equals(movesA[i].id, movesB[i].id)) {
+      if (!equalsOpId(movesA[i].id, movesB[i].id)) {
         return false;
       }
     }
@@ -607,7 +607,7 @@ export class RepTree {
     const lastOp = this.moveOps.length > 0 ? this.moveOps[this.moveOps.length - 1] : null;
 
     // If it's the most recent move operation - just try to move it. No conflict resolution is needed.
-    if (lastOp === null || op.id.isGreaterThan(lastOp.id)) {
+    if (lastOp === null || isOpIdGreaterThan(op.id, lastOp.id)) {
       this.moveOps.push(op);
       this.reportOpAsApplied(op);
       this.tryToMove(op);
@@ -625,7 +625,7 @@ export class RepTree {
       for (let i = this.moveOps.length - 1; i >= 0; i--) {
         const moveOp = this.moveOps[i];
         targetIndex = i;
-        if (op.id.isGreaterThan(moveOp.id)) {
+        if (isOpIdGreaterThan(op.id, moveOp.id)) {
           break;
         }
         else {
@@ -749,23 +749,23 @@ export class RepTree {
 
       // Apply the property if it's not already applied or if the current op is newer
       // This is the last writer wins approach that ensures the same state between replicas.
-      if (!prevOpId || op.id.isGreaterThan(prevOpId)) {
+      if (!prevOpId || isOpIdGreaterThan(op.id, prevOpId)) {
         this.setLLWPropertyAndItsOpId(op);
-      } else {
-        // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
-        // if we ever receive the same op from another peer.
-        this.knownOps.add(op.id.toString());
-      }
+              } else {
+          // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
+          // if we ever receive the same op from another peer.
+          this.knownOps.add(opIdToString(op.id));
+        }
 
       // Remove the transient property if the current op is greater
-      if (prevTransientOpId && op.id.isGreaterThan(prevTransientOpId)) {
+      if (prevTransientOpId && isOpIdGreaterThan(op.id, prevTransientOpId)) {
         this.transientPropertiesAndTheirOpIds.delete(`${op.key}@${op.targetId}`);
         targetVertex.removeTransientProperty(op.key);
       }
 
     } else {
       // Handle transient properties
-      if (!prevTransientOpId || op.id.isGreaterThan(prevTransientOpId)) {
+      if (!prevTransientOpId || isOpIdGreaterThan(op.id, prevTransientOpId)) {
         this.setTransientPropertyAndItsOpId(op);
       }
     }
@@ -815,7 +815,7 @@ export class RepTree {
   }
 
   private reportOpAsApplied(op: VertexOperation) {
-    this.knownOps.add(op.id.toString());
+    this.knownOps.add(opIdToString(op.id));
 
     if (this._stateVectorEnabled) {
       this.stateVector.updateFromOp(op);
@@ -857,7 +857,7 @@ export class RepTree {
   private undoMove(op: MoveVertex) {
     const targetVertex = this.state.getVertex(op.targetId);
     if (!targetVertex) {
-      console.error(`An attempt to undo move operation ${op.id.toString()} failed because the target vertex ${op.targetId} not found`);
+      console.error(`An attempt to undo move operation ${opIdToString(op.id)} failed because the target vertex ${op.targetId} not found`);
       return;
     }
 
@@ -919,7 +919,7 @@ export class RepTree {
     }
 
     // Sort the missing ops by OpId before returning, ensuring causal order
-    missingOps.sort((a, b) => OpId.compare(a.id, b.id));
+    missingOps.sort((a, b) => compareOpId(a.id, b.id));
 
     return missingOps;
   }
