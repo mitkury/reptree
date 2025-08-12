@@ -23,6 +23,25 @@ npm install reptree
 
 ## Usage
 
+### Reactive vertex with Zod (optional)
+
+```ts
+import { RepTree, bindVertex } from 'reptree';
+import { z } from 'zod';
+
+const tree = new RepTree('peer1');
+const root = tree.createRoot();
+const v = root.newChild();
+
+const Person = z.object({ name: z.string(), age: z.number().int().min(0) });
+const person = bindVertex(tree, v.id, Person);
+
+person.name = 'Alice'; // validated and persisted
+person.age = 33;       // validated and persisted
+```
+
+For more, see `docs/reactive-vertices.md`. 
+
 ```typescript
 import { RepTree } from 'reptree';
 

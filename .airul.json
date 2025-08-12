@@ -6,7 +6,7 @@
     "docs/dev/rules-for-ai.md",
     "package.json",
     "docs/vector-states.md",
-    "docs/database.md"
+    "docs/reactive-vertices.md"
   ],
   "output": {
     "cursor": true,
