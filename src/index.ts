@@ -14,3 +14,6 @@ export * from './operations';
 
 // Utilities
 export { default as uuid } from './uuid';
+
+// Reactive helpers (opt-in)
+export { bindVertex } from './reactive';
