@@ -2,7 +2,7 @@
 
 ## Motivation
 
-RepTree vertices store properties in a generic map (`Record<string, unknown>`), but many applications require those properties to conform to a specific interface. Using [Zod](https://github.com/colinhacks/zod) we can validate and infuse runtime type safety, ensuring data integrity and reducing boilerplate in user code.
+RepTree vertices store properties in a generic map (`Record<string, unknown>`), but many applications require those properties to conform to a specific interface. Using [Zod v4](https://zod.dev/v4) we can validate and infuse runtime type safety, ensuring data integrity and reducing boilerplate in user code.
 
 ## High-Level API
 
@@ -16,7 +16,9 @@ function parseVertex<T>(
   vertexId: string,
   schema: ZodSchema<T>
 ): T {
-  const props = tree.getVertexProperties(vertexId);
+  const propsArray = tree.getVertexProperties(vertexId);
+  const props: Record<string, unknown> = {};
+  for (const { key, value } of propsArray) props[key] = value as unknown;
   return schema.parse(props);
 }
 ```
@@ -29,7 +31,9 @@ Add a method `parseVertex<T>(id: string, schema: ZodSchema<T>): T`.
 class RepTree {
   /* ...existing... */
   parseVertex<T>(vertexId: string, schema: ZodSchema<T>): T {
-    const props = this.getVertexProperties(vertexId);
+    const propsArray = this.getVertexProperties(vertexId);
+    const props: Record<string, unknown> = {};
+    for (const { key, value } of propsArray) props[key] = value as unknown;
     return schema.parse(props);
   }
 }
@@ -39,7 +43,8 @@ class RepTree {
 
 ```ts
 const tree = new RepTree('peer1');
-const nodeId = tree.newVertex(tree.rootVertex.id).id;
+const root = tree.createRoot();
+const nodeId = tree.newVertex(root.id).id;
 
 // Define Zod schema
 const Person = z.object({

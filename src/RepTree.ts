@@ -948,4 +948,16 @@ export class RepTree {
       this.stateVector = new StateVector();
     }
   }
+
+  /**
+   * Parses the vertex properties with a provided schema that has a `parse` method (e.g., Zod schema)
+   */
+  parseVertex<T>(vertexId: string, schema: { parse: (data: unknown) => T }): T {
+    const propsArray = this.getVertexProperties(vertexId);
+    const propsObject: Record<string, unknown> = {};
+    for (const { key, value } of propsArray) {
+      propsObject[key] = value as unknown;
+    }
+    return schema.parse(propsObject);
+  }
 }
