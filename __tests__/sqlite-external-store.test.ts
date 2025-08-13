@@ -6,6 +6,7 @@ import {
   SqliteJsonLogStore,
   ensureRepTreeSchema,
 } from '../dist/index.js';
+import * as Y from 'yjs';
 
 function createTreeWithSqlite(db: any, peerId: string, withLogs: boolean, opMemoryLimit?: number) {
   ensureRepTreeSchema(db);
@@ -97,5 +98,37 @@ describe('SQLite external store integration', () => {
     const count = t1.getAllVertices().length;
     expect(t2.getAllVertices().length).toBe(count);
     expect(t3.getAllVertices().length).toBe(count);
+  });
+
+  test('Yjs property ops stream through SQLite prop log', async () => {
+    const db = new Database(':memory:');
+    const t1 = createTreeWithSqlite(db, 'p1', true, 10);
+    const t2 = createTreeWithSqlite(db, 'p2', true, 10);
+
+    // share root
+    const r1 = t1.createRoot();
+    t2.merge(t1.getAllOps());
+
+    // set Yjs property on t1
+    const ydoc = new Y.Doc();
+    const ytext = ydoc.getText('default');
+    ytext.insert(0, 'Hello');
+    t1.setVertexProperty(r1.id, 'content', ydoc);
+
+    // mutate the Y.Doc to emit CRDT updates (and log them)
+    const doc1 = t1.getVertexProperty(r1.id, 'content') as Y.Doc;
+    const text1 = doc1.getText('default');
+    text1.insert(text1.length, ' world');
+
+    // compute and apply missing ops using async log scan
+    const sv2 = t2.getStateVector();
+    if (sv2) {
+      const missing = await t1.getMissingOpsAsync(sv2);
+      t2.merge(missing);
+    }
+
+    const doc2 = t2.getVertexProperty(r1.id, 'content') as Y.Doc;
+    expect(doc2).toBeInstanceOf(Y.Doc);
+    expect(doc2.getText('default').toString()).toBe('Hello world');
   });
 });
