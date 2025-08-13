@@ -20,6 +20,10 @@ export class Vertex {
     return this.getProperty('_n') as string | undefined;
   }
 
+  async getNameAsync(): Promise<string | undefined> {
+    return this.getPropertyAsync('_n') as Promise<string | undefined>;
+  }
+
   set name(name: string) {
     this.tree.setVertexProperty(this.id, '_n', name);
   }
@@ -53,16 +57,34 @@ export class Vertex {
     return this.tree.getChildren(this.id);
   }
 
+  async childrenAsync(): Promise<Vertex[]> {
+    return this.tree.getChildrenAsync(this.id);
+  }
+
   get childrenIds(): string[] {
     return this.tree.getChildrenIds(this.id);
+  }
+
+  async childrenIdsAsync(): Promise<string[]> {
+    return this.tree.getChildrenIdsAsync(this.id);
   }
 
   getAsTypedObject<T>(): T {
     return this.getProperties() as T;
   }
 
+  async getAsTypedObjectAsync<T>(): Promise<T> {
+    const props = await this.getPropertiesAsync();
+    return props as T;
+  }
+
   getChildrenAsTypedArray<T>(): T[] {
     return this.children.map(v => v.getAsTypedObject<T>());
+  }
+
+  async getChildrenAsTypedArrayAsync<T>(): Promise<T[]> {
+    const children = await this.childrenAsync();
+    return children.map(v => v.getAsTypedObject<T>());
   }
 
   newChild(props?: Record<string, VertexPropertyType> | object | null): Vertex {
@@ -105,6 +127,10 @@ export class Vertex {
     return this.tree.getVertexProperty(this.id, key, includingTransient);
   }
 
+  async getPropertyAsync(key: string, includingTransient: boolean = true): Promise<VertexPropertyType | undefined> {
+    return this.tree.getVertexPropertyAsync(this.id, key, includingTransient);
+  }
+
   getProperties(): Record<string, VertexPropertyType> {
     const props: Record<string, VertexPropertyType> = {};
     this.tree.getVertexProperties(this.id).forEach(p => {
@@ -113,20 +139,47 @@ export class Vertex {
     return props;
   }
 
+  async getPropertiesAsync(): Promise<Record<string, VertexPropertyType>> {
+    const propsArray = await this.tree.getVertexPropertiesAsync(this.id);
+    const props: Record<string, VertexPropertyType> = {};
+    propsArray.forEach(p => { props[p.key] = p.value; });
+    return props;
+  }
+
   findAllChildrenWithProperty(key: string, value: VertexPropertyType): Vertex[] {
     return this.children.filter(c => c.getProperty(key) === value);
+  }
+
+  async findAllChildrenWithPropertyAsync(key: string, value: VertexPropertyType): Promise<Vertex[]> {
+    const children = await this.childrenAsync();
+    return children.filter(c => c.getProperty(key) === value);
   }
 
   findFirstChildVertexWithProperty(key: string, value: VertexPropertyType): Vertex | undefined {
     return this.children.find(c => c.getProperty(key) === value);
   }
 
+  async findFirstChildVertexWithPropertyAsync(key: string, value: VertexPropertyType): Promise<Vertex | undefined> {
+    const children = await this.childrenAsync();
+    return children.find(c => c.getProperty(key) === value);
+  }
+
   findFirstTypedChildWithProperty<T>(key: string, value: VertexPropertyType): T | undefined {
     return this.findFirstChildVertexWithProperty(key, value)?.getAsTypedObject<T>();
   }
 
+  async findFirstTypedChildWithPropertyAsync<T>(key: string, value: VertexPropertyType): Promise<T | undefined> {
+    const v = await this.findFirstChildVertexWithPropertyAsync(key, value);
+    return v?.getAsTypedObject<T>();
+  }
+
   findAllTypedChildrenWithProperty<T>(key: string, value: VertexPropertyType): T[] {
     return this.findAllChildrenWithProperty(key, value).map(c => c.getAsTypedObject<T>());
+  }
+
+  async findAllTypedChildrenWithPropertyAsync<T>(key: string, value: VertexPropertyType): Promise<T[]> {
+    const children = await this.findAllChildrenWithPropertyAsync(key, value);
+    return children.map(c => c.getAsTypedObject<T>());
   }
 
   observe(listener: (events: VertexChangeEvent[]) => void): () => void {

@@ -6,14 +6,46 @@ A tree data structure using CRDTs for seamless replication between peers.
 >
 > RepTree was created for the [Supa](https://github.com/supaorg/supa) project, an open-source alternative to ChatGPT.
 
-## Description
+## How RepTree works (brief)
 
-RepTree uses multiple conflict-free replicated data types (CRDTs) to manage seamless replication between peers:
-- A move tree CRDT is used for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
-- A last writer wins (LWW) CRDT is used for properties.
-- Yjs integration for collaborative editing with various shared data types (Text, Array, Map, XML).
+RepTree maintains a replicated tree with two CRDTs:
+- Move-tree CRDT for structure (see Martin Kleppmann’s move op paper). Each vertex can move under a new parent; conflicting moves are resolved deterministically by an undo/do/redo algorithm ordered by Lamport timestamps.
+- Last-Writer-Wins (LWW) for properties. Non-Yjs properties resolve by taking the most recent op per key.
+- Optional Yjs integration stores collaborative documents as properties. RepTree listens to Yjs updates and turns them into prop ops.
 
-RepTree can also be viewed as a hierarchical, distributed database. For more details on its database capabilities, see [RepTree as a Database](docs/database.md).
+Replication is op-based: peers exchange operations and converge to the same structure and properties. State-vectors can be used to send only the ops a peer is missing.
+
+## External storage (optional; Node)
+
+For large trees and long histories, you can offload the snapshot and/or logs to an external store (SQLite adapter provided). The in-memory state remains the hot working set; additional data is paged from storage via async helpers.
+
+- Pass storage adapters at construction time:
+  ```ts
+  import Database from 'better-sqlite3';
+  import {
+    RepTree,
+    SqliteVertexStore,
+    SqliteJsonLogStore,
+    ensureRepTreeSchema,
+  } from 'reptree';
+
+  const db = new Database('reptree.db');
+  ensureRepTreeSchema(db);
+
+  const tree = new RepTree('peer1', {
+    vertexStore: new SqliteVertexStore(db),
+    moveLog: new SqliteJsonLogStore(db, 'rt_move_ops'),
+    propLog: new SqliteJsonLogStore(db, 'rt_prop_ops'),
+    opMemoryLimit: 50_000, // keep only newest N ops in memory
+  });
+  ```
+- Use async helpers to page data when it’s not already in memory:
+  - `getVertexAsync`, `getChildrenAsync`, `getChildrenIdsAsync`
+  - `getVertexPropertyAsync`, `getVertexPropertiesAsync`
+  - `getMissingOpsAsync(stateVector)` streams missing ops from external logs
+- The synchronous API still works and reads from the in-memory snapshot. It remains the default surface for v1.
+
+For details, see `docs/big-data-v1.md`.
 
 ## Installation
 
