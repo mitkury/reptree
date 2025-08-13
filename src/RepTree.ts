@@ -17,6 +17,20 @@ import uuid from "./uuid";
 import { Vertex } from './Vertex';
 import { StateVector } from './StateVector';
 import * as Y from 'yjs';
+import type { LogStoreLike, VertexStore } from './storage/types';
+
+// Storage options that enable external persistence for vertices and logs
+type RepTreeOptions = {
+  vertexStore?: VertexStore;
+  moveLog?: LogStoreLike<MoveVertex>;
+  propLog?: LogStoreLike<SetVertexProperty>;
+  cacheSize?: number;           // not used in v1
+  opMemoryLimit?: number;       // if provided, evict older ops beyond the limit (disabled by default)
+};
+
+function isRepTreeOptions(arg: unknown): arg is RepTreeOptions {
+  return !!arg && typeof arg === 'object' && !Array.isArray(arg);
+}
 
 type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
 
@@ -50,19 +64,38 @@ export class RepTree {
   private stateVector: StateVector;
   private _stateVectorEnabled: boolean = true;
 
+  // External storage/logging
+  private opts: RepTreeOptions | null = null;
+  private opMemoryLimit: number | null = null;
+
   /**
    * @param peerId - The peer ID of the current client. Should be unique across all peers.
    * @param ops - The operations to replicate an existing tree, if not provided - an empty tree will be created without a root vertex
    */
-  constructor(peerId: string, ops?: ReadonlyArray<VertexOperation>) {
+  constructor(peerId: string, ops?: ReadonlyArray<VertexOperation>);
+  constructor(peerId: string, opts?: RepTreeOptions, ops?: ReadonlyArray<VertexOperation>);
+  constructor(peerId: string, arg2?: ReadonlyArray<VertexOperation> | RepTreeOptions, arg3?: ReadonlyArray<VertexOperation>) {
     this.peerId = peerId;
     this.state = new TreeState();
 
     // Initialize state vector (enabled by default)
     this.stateVector = new StateVector();
 
-    if (ops && ops.length > 0) {
-      this.applyOps(ops);
+    // Parse arguments: support both (peerId, ops?) and (peerId, opts?, ops?)
+    let initialOps: ReadonlyArray<VertexOperation> | undefined;
+    if (Array.isArray(arg2)) {
+      initialOps = arg2;
+    } else if (isRepTreeOptions(arg2)) {
+      this.opts = arg2;
+      this.opMemoryLimit = this.opts?.opMemoryLimit ?? null;
+      initialOps = arg3;
+    } else {
+      this.opts = null;
+      initialOps = undefined;
+    }
+
+    if (initialOps && initialOps.length > 0) {
+      this.applyOps(initialOps);
 
       const root = this.root;
       if (!root) {
@@ -108,6 +141,38 @@ export class RepTree {
 
   getAllOps(): ReadonlyArray<VertexOperation> {
     return [...this.moveOps, ...this.setPropertyOps];
+  }
+
+  // --- Async read helpers (v1 shim) ---
+  async getChildrenAsync(vertexId: string): Promise<Vertex[]> {
+    // If in-memory children exist, return them
+    const inMemChildren = this.state.getChildren(vertexId).map(v => new Vertex(this, v));
+    if (inMemChildren.length > 0 || !this.opts?.vertexStore) return inMemChildren;
+
+    // Load a page of children from external store
+    const page = await this.opts.vertexStore.getChildrenPage(vertexId, null, 1000);
+    const results: Vertex[] = [];
+    for (const { id: childId } of page) {
+      const v = await this.ensureVertexLoadedAsync(childId);
+      if (v) results.push(new Vertex(this, v));
+    }
+    return results;
+  }
+
+  async getChildrenIdsAsync(vertexId: string): Promise<string[]> {
+    // If we have an external store and the vertex is not in memory or has no children, attempt to read a page
+    const inMem = this.state.getChildrenIds(vertexId);
+    if (inMem.length > 0 || !this.opts?.vertexStore) return inMem;
+    const page = await this.opts.vertexStore.getChildrenPage(vertexId, null, 1000);
+    return page.map(p => p.id);
+  }
+
+  async getVertexPropertyAsync(vertexId: string, key: string, includingTransient: boolean = true): Promise<VertexPropertyType | undefined> {
+    return this.getVertexProperty(vertexId, key, includingTransient);
+  }
+
+  async getVertexPropertiesAsync(vertexId: string): Promise<Readonly<TreeVertexProperty[]>> {
+    return this.getVertexProperties(vertexId);
   }
 
   getVertex(vertexId: string): Vertex | undefined {
@@ -226,6 +291,7 @@ export class RepTree {
     const op = newMoveVertexOp(this.lamportClock, this.peerId, vertexId, parentId);
     this.localOps.push(op);
     this.applyMove(op);
+    this.maybePersistMove(op);
   }
 
   deleteVertex(vertexId: string) {
@@ -254,6 +320,7 @@ export class RepTree {
     const op = newSetTransientVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, opValue);
     this.localOps.push(op);
     this.applyProperty(op);
+    this.maybePersistProperty(op);
   }
 
   setVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
@@ -278,6 +345,7 @@ export class RepTree {
     const op = newSetVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, opValue);
     this.localOps.push(op);
     this.applyProperty(op);
+    this.maybePersistProperty(op);
   }
 
   setVertexProperties(vertexId: string, props: Record<string, VertexPropertyType> | object) {
@@ -353,6 +421,9 @@ export class RepTree {
       }
 
       this.applyOperation(op);
+      // Persist any incoming ops to external logs as well
+      if (isMoveVertexOp(op)) this.maybePersistMove(op);
+      if (isAnyPropertyOp(op)) this.maybePersistProperty(op as SetVertexProperty);
     }
   }
 
@@ -376,6 +447,43 @@ export class RepTree {
     for (let i = 0, len = propertyOps.length; i < len; i++) {
       const op = propertyOps[i];
       this.applyProperty(op as SetVertexProperty);
+    }
+  }
+
+  private evictOldOpsIfNeeded() {
+    if (!this.opMemoryLimit || this.opMemoryLimit <= 0) return;
+    const limit = this.opMemoryLimit;
+
+    if (this.moveOps.length > limit) {
+      // Keep the newest 'limit' operations
+      this.moveOps = this.moveOps.slice(this.moveOps.length - limit);
+    }
+    if (this.setPropertyOps.length > limit) {
+      this.setPropertyOps = this.setPropertyOps.slice(this.setPropertyOps.length - limit);
+    }
+  }
+
+  private async putVertexSnapshotAsync(vertexId: string, parentId: string | null) {
+    if (!this.opts?.vertexStore) return;
+    try {
+      await this.opts.vertexStore.putVertex({ id: vertexId, parentId, idx: null, payload: null });
+    } catch {
+      // ignore v1
+    }
+  }
+
+  private maybePersistMove(op: MoveVertex) {
+    if (this.opts?.moveLog) {
+      // Fire-and-forget persistence so we don't break sync API
+      void this.opts.moveLog.append(op);
+    }
+    // Keep snapshot up to date for children page lookup
+    void this.putVertexSnapshotAsync(op.targetId, op.parentId);
+  }
+
+  private maybePersistProperty(op: SetVertexProperty) {
+    if (this.opts?.propLog) {
+      void this.opts.propLog.append(op);
     }
   }
 
@@ -542,6 +650,7 @@ export class RepTree {
     const op = newMoveVertexOp(this.lamportClock, this.peerId, vertexId, parentId);
     this.localOps.push(op);
     this.applyMove(op);
+    this.maybePersistMove(op);
 
     // Set the creation date
     this.setVertexProperty(vertexId, '_c', new Date().toISOString());
@@ -611,6 +720,7 @@ export class RepTree {
       this.moveOps.push(op);
       this.reportOpAsApplied(op);
       this.tryToMove(op);
+      this.evictOldOpsIfNeeded();
     }
 
     // Here comes the core of the 'THE REPLICATED TREE ALGORITHM'.
@@ -642,6 +752,7 @@ export class RepTree {
       for (let i = targetIndex + 2; i < this.moveOps.length; i++) {
         this.tryToMove(this.moveOps[i]);
       }
+      this.evictOldOpsIfNeeded();
     }
 
     // After applying the move, check if it unblocks any pending moves
@@ -701,6 +812,7 @@ export class RepTree {
 
       this.localOps.push(op);
       this.applyProperty(op);
+      this.maybePersistProperty(op);
 
       // @TODO: should we remove it and only update form applyProperty
       // Update state vector if enabled
@@ -751,17 +863,19 @@ export class RepTree {
       // This is the last writer wins approach that ensures the same state between replicas.
       if (!prevOpId || isOpIdGreaterThan(op.id, prevOpId)) {
         this.setLLWPropertyAndItsOpId(op);
-              } else {
-          // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
-          // if we ever receive the same op from another peer.
-          this.knownOps.add(opIdToString(op.id));
-        }
+      } else {
+        // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
+        // if we ever receive the same op from another peer.
+        this.knownOps.add(opIdToString(op.id));
+      }
 
       // Remove the transient property if the current op is greater
       if (prevTransientOpId && isOpIdGreaterThan(op.id, prevTransientOpId)) {
         this.transientPropertiesAndTheirOpIds.delete(`${op.key}@${op.targetId}`);
         targetVertex.removeTransientProperty(op.key);
       }
+
+      this.evictOldOpsIfNeeded();
 
     } else {
       // Handle transient properties
@@ -804,6 +918,7 @@ export class RepTree {
     this.reportOpAsApplied(op);
 
     // @TODO: should we update state vector here?
+    this.evictOldOpsIfNeeded();
   }
 
   private applyOperation(op: VertexOperation) {
@@ -842,6 +957,9 @@ export class RepTree {
     if (op.parentId && this.isAncestor(op.parentId, op.targetId)) return;
 
     this.state.moveVertex(op.targetId, op.parentId);
+
+    // Keep vertex snapshot in sync if enabled
+    void this.putVertexSnapshotAsync(op.targetId, op.parentId);
 
     // If the vertex didn't exist before the move - see if it has pending properties
     // and apply them.
@@ -925,6 +1043,47 @@ export class RepTree {
   }
 
   /**
+   * Async variant that can stream older operations from external logs when not present in memory.
+   */
+  async getMissingOpsAsync(theirStateVector: Record<string, number[][]>): Promise<VertexOperation[]> {
+    const inMem = this.getMissingOps(theirStateVector);
+    if (!this.opts?.moveLog && !this.opts?.propLog) return inMem;
+
+    // Build a set of opIds already included
+    const present = new Set(inMem.map(op => opIdToString(op.id)));
+
+    const otherStateVector = new StateVector(theirStateVector);
+    const missingRanges = this.stateVector.diff(otherStateVector);
+
+    // Helper to test if op is in missing ranges
+    const isInMissing = (op: VertexOperation) => missingRanges.some(r => op.id.peerId === r.peerId && op.id.counter >= r.start && op.id.counter <= r.end);
+
+    const result: VertexOperation[] = [...inMem];
+
+    // Scan logs to fetch any older ops if needed
+    if (this.opts.moveLog) {
+      for await (const op of this.opts.moveLog.scanRange({ from: 1 })) {
+        if (isMoveVertexOp(op) && isInMissing(op) && !present.has(opIdToString(op.id))) {
+          result.push(op);
+          present.add(opIdToString(op.id));
+        }
+      }
+    }
+    if (this.opts.propLog) {
+      for await (const op of this.opts.propLog.scanRange({ from: 1 })) {
+        if (isAnyPropertyOp(op) && isInMissing(op) && !present.has(opIdToString(op.id))) {
+          result.push(op);
+          present.add(opIdToString(op.id));
+        }
+      }
+    }
+
+    // Ensure causal order
+    result.sort((a, b) => compareOpId(a.id, b.id));
+    return result;
+  }
+
+  /**
    * Gets or sets whether state vector tracking is enabled
    */
   get stateVectorEnabled(): boolean {
@@ -959,5 +1118,23 @@ export class RepTree {
       propsObject[key] = value as unknown;
     }
     return schema.parse(propsObject);
+  }
+
+  /** Ensure a vertex is present in memory by loading from external store when available */
+  private async ensureVertexLoadedAsync(vertexId: string): Promise<VertexState | undefined> {
+    const existing = this.state.getVertex(vertexId);
+    if (existing) return existing;
+    if (!this.opts?.vertexStore) return undefined;
+    const enc = await this.opts.vertexStore.getVertex(vertexId);
+    if (!enc) return undefined;
+    // Materialize via move to set parentId and register the vertex in TreeState
+    this.state.moveVertex(enc.id, enc.parentId ?? null);
+    return this.state.getVertex(vertexId);
+  }
+
+  async getVertexAsync(vertexId: string): Promise<Vertex | undefined> {
+    let v = this.state.getVertex(vertexId);
+    if (!v) v = await this.ensureVertexLoadedAsync(vertexId);
+    return v ? new Vertex(this, v) : undefined;
   }
 }

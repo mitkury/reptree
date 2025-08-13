@@ -17,3 +17,8 @@ export { default as uuid } from './uuid';
 
 // Reactive helpers (opt-in)
 export { bindVertex } from './reactive';
+
+// Storage interfaces and default adapters
+export type { EncodedVertex, VertexStore, LogStoreLike, MoveLogStore, PropLogStore } from './storage/types';
+export { MemoryVertexStore, MemoryLogStore } from './storage/memory';
+export { SqliteVertexStore, SqliteJsonLogStore, ensureRepTreeSchema } from './storage/sqlite';
