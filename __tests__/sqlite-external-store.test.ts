@@ -131,4 +131,33 @@ describe('SQLite external store integration', () => {
     expect(doc2).toBeInstanceOf(Y.Doc);
     expect(doc2.getText('default').toString()).toBe('Hello world');
   });
+
+  test('forces storage fetch when op memory limit is tiny', async () => {
+    const db = new Database(':memory:');
+    const t1 = createTreeWithSqlite(db, 'p1', true, 3); // tiny window
+    const t2 = createTreeWithSqlite(db, 'p2', true, 3);
+
+    // share root
+    const r1 = t1.createRoot();
+    t2.merge(t1.getAllOps());
+
+    // generate many property ops to exceed memory window
+    for (let i = 0; i < 20; i++) {
+      t1.setVertexProperty(r1.id, `k`, i);
+    }
+
+    // their state vector
+    const sv2 = t2.getStateVector()!;
+
+    // Sync-only missing ops are limited to in-memory window
+    const missingSync = t1.getMissingOps(sv2);
+
+    // Async should pull from storage and be larger
+    const missingAsync = await t1.getMissingOpsAsync(sv2);
+    expect(missingAsync.length).toBeGreaterThan(missingSync.length);
+
+    // Apply async missing ops and verify final value
+    t2.merge(missingAsync);
+    expect(t2.getVertexProperty(r1.id, 'k')).toBe(19);
+  });
 });
