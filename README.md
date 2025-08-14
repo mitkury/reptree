@@ -45,7 +45,7 @@ For large trees and long histories, you can offload the snapshot and/or logs to 
   - `getMissingOpsAsync(stateVector)` streams missing ops from external logs
 - The synchronous API still works and reads from the in-memory snapshot. It remains the default surface for v1.
 
-For details, see `docs/big-data-v1.md`.
+For details, see `docs/big-trees.md`.
 
 ## Installation
 
