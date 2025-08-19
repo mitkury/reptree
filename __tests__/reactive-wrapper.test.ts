@@ -42,4 +42,42 @@ describe('bindVertex reactive wrapper', () => {
 
     expect(() => (person.age = -1 as any)).toThrowError();
   });
+
+  test('Vertex.bind returns reactive object (no schema)', () => {
+    const tree = new RepTree('peer1');
+    const root = tree.createRoot();
+    const v = tree.newVertex(root.id);
+
+    const person = v.bind();
+
+    person['name' as keyof typeof person] = 'Carol' as any;
+    person['age' as keyof typeof person] = 28 as any;
+
+    expect(tree.getVertexProperty(v.id, 'name')).toBe('Carol');
+    expect(tree.getVertexProperty(v.id, 'age')).toBe(28);
+
+    tree.setVertexProperty(v.id, 'name', 'Dave');
+    expect(person['name' as keyof typeof person]).toBe('Dave');
+  });
+
+  test('Vertex.bind validates writes with schema', () => {
+    const tree = new RepTree('peer1');
+    const root = tree.createRoot();
+    const v = tree.newVertex(root.id);
+
+    const Person = z.object({
+      name: z.string(),
+      age: z.number().int().min(0),
+    });
+
+    const person = v.bind(Person);
+
+    person.name = 'Eve' as any;
+    person.age = 41 as any;
+
+    expect(tree.getVertexProperty(v.id, 'name')).toBe('Eve');
+    expect(tree.getVertexProperty(v.id, 'age')).toBe(41);
+
+    expect(() => (person.age = -5 as any)).toThrowError();
+  });
 });

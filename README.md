@@ -34,7 +34,12 @@ const root = tree.createRoot();
 const v = root.newChild();
 
 const Person = z.object({ name: z.string(), age: z.number().int().min(0) });
+
+// Helper function form
 const person = bindVertex(tree, v.id, Person);
+
+// Or via instance method on Vertex
+// const person = v.bind(Person);
 
 person.name = 'Alice'; // validated and persisted
 person.age = 33;       // validated and persisted

@@ -1,5 +1,6 @@
 import type { VertexState } from "./VertexState";
 import type { RepTree } from "./RepTree";
+import { bindVertex, type SchemaLike } from './reactive';
 import type { VertexChangeEvent, VertexPropertyType } from "./treeTypes";
 
 /**
@@ -155,5 +156,10 @@ export class Vertex {
 
   moveTo(parent: Vertex): void {
     this.tree.moveVertex(this.id, parent.id);
+  }
+
+  /** Returns a live reactive object bound to this vertex. Optional schema validates writes. */
+  bind<T extends Record<string, unknown>>(schema?: SchemaLike<T>): T {
+    return bindVertex<T>(this.tree, this.id, schema);
   }
 } 
