@@ -10,9 +10,50 @@ export type SchemaLike<T> = {
   shape?: Record<string, FieldSchemaLike>;
 };
 
-function toObject(tree: RepTree, id: string): Record<string, unknown> {
+export type AliasRule = {
+  publicKey: string;
+  internalKey: string;
+  toPublic?: (value: unknown) => unknown;
+  toInternal?: (value: unknown) => unknown;
+};
+
+export const defaultAliases: AliasRule[] = [
+  { publicKey: 'name', internalKey: '_n' },
+  {
+    publicKey: 'createdAt',
+    internalKey: '_c',
+    toPublic: (v: unknown) => (typeof v === 'string' ? new Date(v) : v),
+    toInternal: (v: unknown) => (v instanceof Date ? v.toISOString() : v),
+  },
+];
+
+export type BindOptions<T> = {
+  schema?: SchemaLike<T>;
+  aliases?: AliasRule[];
+  includeInternalKeys?: boolean;
+};
+
+function buildAliasMaps(aliases: AliasRule[]) {
+  const publicToInternal = new Map<string, AliasRule>();
+  const internalToPublic = new Map<string, AliasRule>();
+  for (const rule of aliases) {
+    publicToInternal.set(rule.publicKey, rule);
+    internalToPublic.set(rule.internalKey, rule);
+  }
+  return { publicToInternal, internalToPublic };
+}
+
+function toPublicObject(tree: RepTree, id: string, internalToPublic: Map<string, AliasRule>): Record<string, unknown> {
   const obj: Record<string, unknown> = {};
-  for (const { key, value } of tree.getVertexProperties(id)) obj[key] = value as unknown;
+  for (const { key, value } of tree.getVertexProperties(id)) {
+    const rule = internalToPublic.get(key);
+    if (rule) {
+      const converted = rule.toPublic ? rule.toPublic(value as unknown) : (value as unknown);
+      obj[rule.publicKey] = converted;
+    } else {
+      obj[key] = value as unknown;
+    }
+  }
   return obj;
 }
 
@@ -25,17 +66,35 @@ function toObject(tree: RepTree, id: string): Record<string, unknown> {
 export function bindVertex<T extends Record<string, unknown>>(
   tree: RepTree,
   id: string,
-  schema?: SchemaLike<T>
+  schemaOrOptions?: SchemaLike<T> | BindOptions<T>
 ): T {
+  const isOptions = typeof schemaOrOptions === 'object' && schemaOrOptions !== null && (
+    Object.prototype.hasOwnProperty.call(schemaOrOptions as object, 'aliases') ||
+    Object.prototype.hasOwnProperty.call(schemaOrOptions as object, 'includeInternalKeys') ||
+    Object.prototype.hasOwnProperty.call(schemaOrOptions as object, 'schema')
+  );
+
+  const options = (isOptions ? (schemaOrOptions as BindOptions<T>) : { schema: schemaOrOptions as SchemaLike<T> }) as BindOptions<T>;
+  const schema = options.schema;
+  const aliases = options.aliases ?? defaultAliases;
+  const includeInternalKeys = options.includeInternalKeys ?? false;
+  const { publicToInternal, internalToPublic } = buildAliasMaps(aliases);
+
   return new Proxy({} as T, {
     get(_target, prop: string | symbol) {
       if (typeof prop !== 'string') return undefined;
+      const rule = publicToInternal.get(prop);
+      if (rule) {
+        const raw = tree.getVertexProperty(id, rule.internalKey);
+        return rule.toPublic ? rule.toPublic(raw as unknown) : raw;
+      }
+      // Fallback to direct property access
       return tree.getVertexProperty(id, prop);
     },
     set(_target, prop: string | symbol, value: unknown) {
       if (typeof prop !== 'string') return true;
 
-      // Prefer field-level validation when available
+      // Prefer field-level validation when available (validate public keys)
       if (schema?.shape && schema.shape[prop]) {
         const field = schema.shape[prop];
         if (field.safeParse) {
@@ -45,7 +104,7 @@ export function bindVertex<T extends Record<string, unknown>>(
         }
       } else if (schema?.safeParse) {
         // Fallback to whole-object validation when field schema is unavailable
-        const next = { ...toObject(tree, id), [prop]: value } as unknown;
+        const next = { ...toPublicObject(tree, id, internalToPublic), [prop]: value } as unknown;
         const res = schema.safeParse(next);
         if (!res.success) throw new Error(`Invalid value for ${String(prop)}`);
         // If schema coerces/transforms, apply coerced value
@@ -55,20 +114,44 @@ export function bindVertex<T extends Record<string, unknown>>(
         }
       }
 
+      // Apply alias mapping (convert public key/value to internal)
+      const rule = publicToInternal.get(prop);
+      if (rule) {
+        const converted = rule.toInternal ? rule.toInternal(value) : value;
+        tree.setVertexProperty(id, rule.internalKey, converted as any);
+        return true;
+      }
+
       tree.setVertexProperty(id, prop, value as any);
       return true;
     },
     deleteProperty(_target, prop: string | symbol) {
       if (typeof prop !== 'string') return true;
+      const rule = publicToInternal.get(prop);
+      if (rule) {
+        tree.setVertexProperty(id, rule.internalKey, undefined as any);
+        return true;
+      }
       tree.setVertexProperty(id, prop, undefined as any);
       return true;
     },
     has(_target, prop: string | symbol) {
       if (typeof prop !== 'string') return false;
-      return !!schema?.shape && Object.prototype.hasOwnProperty.call(schema.shape, prop);
+      // Expose public keys by default when schema is present
+      if (schema?.shape && Object.prototype.hasOwnProperty.call(schema.shape, prop)) return true;
+      if (includeInternalKeys) {
+        // Allow direct checks for internal keys when opted-in
+        return publicToInternal.has(prop) || internalToPublic.has(prop);
+      }
+      return false;
     },
     ownKeys() {
-      return Object.keys(schema?.shape ?? {});
+      const keys = new Set<string>();
+      for (const k of Object.keys(schema?.shape ?? {})) keys.add(k);
+      if (includeInternalKeys) {
+        for (const rule of aliases) keys.add(rule.internalKey);
+      }
+      return Array.from(keys);
     },
     getOwnPropertyDescriptor() {
       return { enumerable: true, configurable: true } as PropertyDescriptor;
