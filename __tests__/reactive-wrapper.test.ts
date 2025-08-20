@@ -116,6 +116,41 @@ describe('bindVertex reactive wrapper', () => {
     expect(tree.getVertexProperty(v.id, '_n')).toBeUndefined();
   });
 
+  test('newChild props alias resolution and type filtering', () => {
+    const tree = new RepTree('peer1');
+    const root = tree.createRoot();
+
+    const child = root.newChild({
+      name: 'ChildA',
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      age: 5,
+      flags: [true, false],
+      badObj: { nested: true } as any,
+      badArr: [1, { x: 1 }] as any,
+      undef: undefined,
+    } as any);
+
+    expect(child.getProperty('_n')).toBe('ChildA');
+    expect(child.getProperty('_c')).toBe('2024-01-01T00:00:00.000Z');
+    expect(child.getProperty('age')).toBe(5);
+    expect(child.getProperty('flags')).toEqual([true, false]);
+    expect(child.getProperty('badObj')).toBeUndefined();
+    expect(child.getProperty('badArr')).toBeUndefined();
+    expect(child.getProperty('undef')).toBeUndefined();
+  });
+
+  test('newNamedChild ignores props.name in favor of explicit name and forbids nested children', () => {
+    const tree = new RepTree('peer1');
+    const root = tree.createRoot();
+
+    const child = root.newNamedChild('Explicit', { name: 'Ignored', age: 1 } as any);
+    expect(child.getProperty('_n')).toBe('Explicit');
+    expect(child.getProperty('age')).toBe(1);
+
+    expect(() => root.newChild({ children: [] } as any)).toThrowError();
+    expect(() => root.newNamedChild('X', { children: [] } as any)).toThrowError();
+  });
+
   test('whole-object validation uses public keys for aliases', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();

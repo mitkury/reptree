@@ -1,6 +1,7 @@
 import type { VertexState } from "./VertexState";
 import type { RepTree } from "./RepTree";
 import { bindVertex, type SchemaLike, type BindOptions } from './reactive';
+import * as Y from 'yjs';
 import type { VertexChangeEvent, VertexPropertyType } from "./treeTypes";
 
 /**
@@ -67,13 +68,23 @@ export class Vertex {
   }
 
   newChild(props?: Record<string, VertexPropertyType> | object | null): Vertex {
-    const typedProps = props as Record<string, VertexPropertyType> | null;
-    return this.tree.newVertex(this.id, typedProps);
+    // Forbid nested children in props (not supported yet)
+    if (props && typeof props === 'object' && 'children' in (props as any)) {
+      throw new Error('Passing children inside props is not supported at the moment');
+    }
+
+    const normalized = Vertex.normalizePropsForCreation(props);
+    return this.tree.newVertex(this.id, normalized);
   }
 
   newNamedChild(name: string, props?: Record<string, VertexPropertyType> | object | null): Vertex {
-    const typedProps = props as Record<string, VertexPropertyType> | null;
-    return this.tree.newNamedVertex(this.id, name, typedProps);
+    // Forbid nested children in props (not supported yet)
+    if (props && typeof props === 'object' && 'children' in (props as any)) {
+      throw new Error('Passing children inside props is not supported at the moment');
+    }
+
+    const normalized = Vertex.normalizePropsForCreation(props, name);
+    return this.tree.newNamedVertex(this.id, name, normalized);
   }
 
   setProperty(key: string, value: VertexPropertyType): void {
@@ -161,5 +172,81 @@ export class Vertex {
   /** Returns a live reactive object bound to this vertex. Accepts schema or options. */
   bind<T extends Record<string, unknown>>(schemaOrOptions?: SchemaLike<T> | BindOptions<T>): T {
     return bindVertex<T>(this.tree, this.id, schemaOrOptions as any);
+  }
+
+  /**
+   * Normalizes an input props object for vertex creation:
+   * - Aliases name -> _n, createdAt -> _c (Date -> ISO string)
+   * - Filters unsupported field types with a console warning
+   * - When a name param is provided to newNamedChild, ignores conflicting name in props
+   */
+  private static normalizePropsForCreation(props?: Record<string, VertexPropertyType> | object | null, explicitName?: string): Record<string, VertexPropertyType> | null {
+    if (!props) return null;
+    const input = props as Record<string, any>;
+    const out: Record<string, VertexPropertyType> = {};
+    const skipped: string[] = [];
+
+    for (const [rawKey, rawValue] of Object.entries(input)) {
+      if (rawValue === undefined) {
+        // Skip undefined to avoid writing explicit undefineds on creation
+        continue;
+      }
+
+      // Disallow nested children handled earlier; skip here defensively
+      if (rawKey === 'children') continue;
+
+      // Alias mapping
+      let key = rawKey;
+      if (rawKey === 'name') {
+        if (explicitName !== undefined) {
+          // Explicit argument takes precedence
+          console.warn('newNamedChild: "name" in props is ignored because a name argument was provided');
+          continue;
+        }
+        key = '_n';
+      } else if (rawKey === 'createdAt') {
+        key = '_c';
+      }
+
+      // Value normalization
+      let value: any = rawValue;
+      if (key === '_c') {
+        if (value instanceof Date) {
+          value = value.toISOString();
+        } else if (typeof value === 'string') {
+          // leave as is (assumed ISO)
+        } else {
+          skipped.push(rawKey);
+          continue;
+        }
+      }
+
+      const isPrimitive = (v: any) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+
+      if (Array.isArray(value)) {
+        // Ensure array of primitives
+        if (!value.every(isPrimitive)) {
+          skipped.push(rawKey);
+          continue;
+        }
+      } else if (typeof value === 'object' && value !== null) {
+        if (!(value instanceof Y.Doc)) {
+          // Unsupported nested object
+          skipped.push(rawKey);
+          continue;
+        }
+      } else if (!isPrimitive(value)) {
+        skipped.push(rawKey);
+        continue;
+      }
+
+      out[key] = value as VertexPropertyType;
+    }
+
+    if (skipped.length > 0) {
+      console.warn(`Some fields were skipped due to unsupported types: ${skipped.join(', ')}`);
+    }
+
+    return Object.keys(out).length > 0 ? out : null;
   }
 } 

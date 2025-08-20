@@ -45,6 +45,19 @@ person.name = 'Alice'; // validated and persisted
 person.age = 33;       // validated and persisted
 ```
 
+#### Aliases for internal fields
+
+- `name` ↔ `_n`
+- `createdAt` ↔ `_c` (Date exposed, ISO stored)
+
+These aliases are applied by default when using `bindVertex` or `vertex.bind()`.
+
+```ts
+person.name = 'Alice';          // writes _n
+person.createdAt = new Date();  // writes _c (ISO)
+console.log(person.createdAt instanceof Date); // true
+```
+
 For more, see `docs/reactive-vertices.md`. 
 
 ```typescript
@@ -97,6 +110,15 @@ const otherTree = new RepTree('peer2');
 const ops = tree.getAllOps();
 otherTree.merge(ops);
 ```
+
+### Creating children with normalized props
+
+`vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:
+
+- Map `name` → `_n`, `createdAt` (Date) → `_c` (ISO)
+- Filter unsupported types (non-primitive objects except Y.Doc)
+- Ignore `props.name` if `newNamedChild` has an explicit `name`
+- Forbid nested children in props for now
 
 ## Yjs Integration
 

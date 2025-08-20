@@ -20,6 +20,31 @@ person.age = 33;       // persisted to CRDT
 console.log(person.name); // 'Alice'
 ```
 
+### Public aliases for internal fields
+
+- name ↔ `_n`
+- createdAt ↔ `_c` (stored as ISO string; exposed as Date)
+
+These aliases are applied by default when using `bindVertex` or `vertex.bind()`.
+
+```ts
+person.name = 'Alice';              // writes _n = 'Alice'
+person.createdAt = new Date();      // writes _c = ISO string
+console.log(person.createdAt);      // Date instance
+```
+
+You can customize aliasing via options:
+
+```ts
+import { defaultAliases } from 'reptree';
+
+const custom = v.bind({
+  schema: Person,
+  aliases: defaultAliases,
+  includeInternalKeys: false,
+});
+```
+
 ## Zod v4 Validation (Optional)
 
 You can provide a [Zod v4](https://zod.dev/v4) schema to validate writes and optionally coerce values.
@@ -42,6 +67,27 @@ person.age = 34;     // ok, validated
 
 - The returned object is a Proxy that forwards reads/writes to the vertex.
 - If a schema is provided, it validates writes. Field-level validation is used when available via `schema.shape`, otherwise a safe whole-object validation is attempted.
+
+## Creating children with normalized props
+
+`vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:
+
+- Map `name` → `_n`, and `createdAt` (Date) → `_c` (ISO string)
+- Filter unsupported types (non-primitive objects except Y.Doc)
+- Ignore `props.name` if `newNamedChild` receives an explicit `name` argument
+- Forbid nested children in props for now
+
+```ts
+const child = root.newChild({
+  name: 'ChildA',
+  createdAt: new Date(),
+  age: 5,
+});
+// Internally stores _n, _c, age
+
+const child2 = root.newNamedChild('Folder', { name: 'ignored', flag: true });
+// Uses explicit name 'Folder'; props.name is ignored
+```
 
 ## Svelte 5 Integration
 
