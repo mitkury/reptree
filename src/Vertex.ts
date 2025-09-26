@@ -10,7 +10,7 @@ import type { VertexChangeEvent, VertexPropertyType } from "./treeTypes";
  */
 export class Vertex {
   constructor(
-    private tree: RepTree,
+    public tree: RepTree,
     private state: VertexState
   ) { }
 
