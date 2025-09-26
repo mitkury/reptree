@@ -615,6 +615,14 @@ export class RepTree {
         // Also truncate op logs so getAllOps() does not include transactional ops/inverses
         this.moveOps.splice(current.moveOpsStart);
         this.setPropertyOps.splice(current.setPropOpsStart);
+        // Rebuild knownOps and state vector to reflect current operation logs
+        this.knownOps = new Set<string>();
+        for (const op of [...this.moveOps, ...this.setPropertyOps]) {
+          this.knownOps.add(opIdToString(op.id));
+        }
+        if (this._stateVectorEnabled) {
+          this.stateVector = StateVector.fromOperations([...this.moveOps, ...this.setPropertyOps]);
+        }
       }
       throw err;
     }
