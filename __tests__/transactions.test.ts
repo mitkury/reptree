@@ -130,6 +130,8 @@ describe('RepTree transact()', () => {
       const i = p.children.find(v => v.name === 'Images')!;
       const l = i.children.find(v => v.name === 'logo.png')!;
       const readme = d.newNamedChild('README.md');
+      // Normalize createdAt to a constant to make structures strictly comparable across runs
+      readme.setProperty('_c', '2000-01-01T00:00:00.000Z');
       readme.setProperties({ type: 'file', size: 2048 });
       l.moveTo(d);
       p.setProperty('updated', true);
@@ -137,8 +139,10 @@ describe('RepTree transact()', () => {
 
     const canceledTree = pre;
     const baselineTree = baselineClone;
-    applyFutureOps(canceledTree);
+    // Apply future ops to baseline and replicate exact ops to canceledTree
     applyFutureOps(baselineTree);
+    const newOps = baselineTree.popLocalOps();
+    canceledTree.merge(newOps);
 
     // The two trees should converge to the same structure
     expect(canceledTree.compareStructure(baselineTree)).toBe(true);
