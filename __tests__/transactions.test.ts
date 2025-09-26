@@ -90,5 +90,61 @@ describe('RepTree transact()', () => {
     expect(b.children.map(v => v.id)).not.toContain(child.id);
     expect(tree.getAllOps().length).toBe(beforeOps);
   });
+
+  test('complex: pre/post equality on cancel and future ops validity', () => {
+    const pre = new RepTree('peer1');
+    const root = pre.createRoot();
+    const proj = root.newNamedChild('Project');
+    const docs = proj.newNamedChild('Docs');
+    docs.setProperties({ type: 'folder' });
+    const img = proj.newNamedChild('Images');
+    const logo = img.newNamedChild('logo.png');
+    logo.setProperties({ type: 'file', size: 1 });
+
+    // Snapshot baseline ops and structure
+    const baselineOps = pre.getAllOps();
+    const baselineClone = pre.replicate('peer2');
+    expect(pre.compareStructure(baselineClone)).toBe(true);
+
+    // Perform a transaction and cancel
+    try {
+      pre.transact(() => {
+        const readme = docs.newNamedChild('README.md');
+        readme.setProperties({ type: 'file', size: 2048 });
+        logo.moveTo(docs);
+        proj.setProperty('updated', true);
+        throw new Error('cancel');
+      });
+    } catch {}
+
+    // After cancel, tree should match baseline structure
+    const afterCancel = pre.replicate('peer3');
+    expect(pre.compareStructure(baselineClone)).toBe(true);
+    expect(pre.compareStructure(afterCancel)).toBe(true);
+
+    // Future ops: apply same new ops to both baseline clone and the canceled tree
+    const applyFutureOps = (t: RepTree) => {
+      const r = t.root!;
+      const p = r.children.find(v => v.name === 'Project')!;
+      const d = p.children.find(v => v.name === 'Docs')!;
+      const i = p.children.find(v => v.name === 'Images')!;
+      const l = i.children.find(v => v.name === 'logo.png')!;
+      const readme = d.newNamedChild('README.md');
+      readme.setProperties({ type: 'file', size: 2048 });
+      l.moveTo(d);
+      p.setProperty('updated', true);
+    };
+
+    const canceledTree = pre;
+    const baselineTree = baselineClone;
+    applyFutureOps(canceledTree);
+    applyFutureOps(baselineTree);
+
+    // The two trees should converge to the same structure
+    expect(canceledTree.compareStructure(baselineTree)).toBe(true);
+
+    // And ops list length parity indicates no leakage on cancel path
+    expect(canceledTree.getAllOps().length).toBe(baselineTree.getAllOps().length);
+  });
 });
 
