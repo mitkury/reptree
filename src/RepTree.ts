@@ -45,6 +45,17 @@ export class RepTree {
   private knownOps: Set<string> = new Set();
   private parentIdBeforeMove: Map<OpId, string | null | undefined> = new Map();
   private opAppliedCallbacks: ((op: VertexOperation) => void)[] = [];
+  
+  // --- Transaction support ---
+  private transactionStack: Array<{
+    inverses: Array<() => void>;
+    touchedProps: Set<string>; // `${key}@${vertexId}`
+    touchedParents: Set<string>; // vertexId
+    createdVertices: Set<string>;
+    localOpsStart: number;
+    moveOpsStart: number;
+    setPropOpsStart: number;
+  }> = [];
 
   // State vector tracking operations from each peer
   private stateVector: StateVector;
@@ -222,6 +233,7 @@ export class RepTree {
   }
 
   moveVertex(vertexId: string, parentId: string) {
+    this.captureMoveInverseIfInTxn(vertexId);
     this.lamportClock++;
     const op = newMoveVertexOp(this.lamportClock, this.peerId, vertexId, parentId);
     this.localOps.push(op);
@@ -233,6 +245,7 @@ export class RepTree {
   }
 
   setTransientVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
+    this.capturePropertyInverseIfInTxn(vertexId, key, true);
     this.lamportClock++;
 
     // Convert Y.Doc to CRDTType for operation
@@ -257,6 +270,7 @@ export class RepTree {
   }
 
   setVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
+    this.capturePropertyInverseIfInTxn(vertexId, key, false);
     this.lamportClock++;
 
     // Convert Y.Doc to CRDTType for operation
@@ -536,6 +550,7 @@ export class RepTree {
   }
 
   private newVertexInternal(vertexId: string, parentId: string | null): string {
+    this.captureCreateInverseIfInTxn(vertexId);
     this.lamportClock++;
     // To create a vertex - we move a vertex with a fresh id under the parent.
     // No need to have a separate "create vertex" operation.
@@ -563,6 +578,106 @@ export class RepTree {
     }
 
     this.newVertexInternal(vertexId, null);
+  }
+
+  // --- Transactions API ---
+
+  /**
+   * Runs a function within a simple transaction. All changes are applied optimistically.
+   * If the function throws, best-effort rollback is performed and any local ops
+   * generated during the transaction are truncated from `localOps`.
+   * Note: Yjs document edits inside a transaction are not fully rolled back in v1.
+   */
+  transact(work: () => void): void {
+    const frame = {
+      inverses: [] as Array<() => void>,
+      touchedProps: new Set<string>(),
+      touchedParents: new Set<string>(),
+      createdVertices: new Set<string>(),
+      localOpsStart: this.localOps.length,
+      moveOpsStart: this.moveOps.length,
+      setPropOpsStart: this.setPropertyOps.length,
+    };
+    this.transactionStack.push(frame);
+    try {
+      work();
+      // Success: drop frame, keep ops
+      this.transactionStack.pop();
+    } catch (err) {
+      // Rollback: apply inverses in reverse order
+      const current = this.transactionStack.pop();
+      if (current) {
+        for (let i = current.inverses.length - 1; i >= 0; i--) {
+          try { current.inverses[i](); } catch (rollbackErr) { /* swallow */ }
+        }
+        // Truncate localOps so transactional ops are not emitted
+        this.localOps.splice(current.localOpsStart);
+        // Also truncate op logs so getAllOps() does not include transactional ops/inverses
+        this.moveOps.splice(current.moveOpsStart);
+        this.setPropertyOps.splice(current.setPropOpsStart);
+        // Rebuild knownOps and state vector to reflect current operation logs
+        this.knownOps = new Set<string>();
+        for (const op of [...this.moveOps, ...this.setPropertyOps]) {
+          this.knownOps.add(opIdToString(op.id));
+        }
+        if (this._stateVectorEnabled) {
+          this.stateVector = StateVector.fromOperations([...this.moveOps, ...this.setPropertyOps]);
+        }
+      }
+      throw err;
+    }
+  }
+
+  private get currentTxn() {
+    return this.transactionStack.length > 0 ? this.transactionStack[this.transactionStack.length - 1] : null;
+  }
+
+  private capturePropertyInverseIfInTxn(vertexId: string, key: string, isTransientCapture: boolean) {
+    const txn = this.currentTxn;
+    if (!txn) return;
+    const composite = `${key}@${vertexId}`;
+    if (txn.touchedProps.has(composite)) return;
+    const prev = this.getVertexProperty(vertexId, key, isTransientCapture);
+    txn.touchedProps.add(composite);
+    txn.inverses.push(() => {
+      // Revert directly on internal state to avoid emitting ops
+      if (isTransientCapture) {
+        const vertex = this.state.getVertex(vertexId);
+        if (vertex) {
+          this.state.setTransientProperty(vertexId, key, prev as any);
+        }
+      } else {
+        const vertex = this.state.getVertex(vertexId);
+        if (vertex) {
+          this.state.setProperty(vertexId, key, prev as any);
+        }
+      }
+    });
+  }
+
+  private captureMoveInverseIfInTxn(vertexId: string) {
+    const txn = this.currentTxn;
+    if (!txn) return;
+    if (txn.touchedParents.has(vertexId)) return;
+    const prevParent = this.state.getVertex(vertexId)?.parentId ?? undefined;
+    txn.touchedParents.add(vertexId);
+    if (prevParent !== undefined) {
+      txn.inverses.push(() => {
+        // Revert directly on internal state to avoid emitting ops
+        this.state.moveVertex(vertexId, prevParent as any);
+      });
+    }
+  }
+
+  private captureCreateInverseIfInTxn(vertexId: string) {
+    const txn = this.currentTxn;
+    if (!txn) return;
+    if (txn.createdVertices.has(vertexId)) return;
+    txn.createdVertices.add(vertexId);
+    txn.inverses.push(() => {
+      // Simulate delete by moving under NULL vertex without emitting ops
+      this.state.moveVertex(vertexId, RepTree.NULL_VERTEX_ID);
+    });
   }
 
   /** Updates the lamport clock with the counter value of the operation */
