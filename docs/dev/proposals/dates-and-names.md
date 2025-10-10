@@ -37,18 +37,17 @@ Keep the internal model simple and make the public API match it directly.
   - Stop mapping keys. `newChild(props)` and `newNamedChild(name, props)` write props as-is (except filtering unsupported types and ignoring `props.name` when an explicit `name` arg is provided).
 
 ## Enrichment Functions
-A tree can register one or more enrichers that run on vertex creation (and optionally on rename or other events). Examples:
+Keep enrichers focused and minimal. We do not need an enricher for names.
 
-- addCreatedAt(): sets `createdAt` if missing
-- addDefaultName(): ensures `name` is present if using named creation
-- custom domain enrichers (e.g., set `type`, compute slugs)
+- Names: `newNamedVertex` writes `name` directly. No name enricher.
+- Dates: Provide one optional enricher `withCreatedAt()` to set `createdAt` on create if missing.
 
 ### Shape
 ```ts
 export type VertexEnricher = (ctx: {
   tree: RepTree;
   vertexId: string;
-  event: 'create' | 'namedCreate' | 'rename';
+  event: 'create';
 }) => void;
 
 class RepTree {
@@ -56,17 +55,9 @@ class RepTree {
 }
 ```
 
-- Execution points:
-  - After `newVertexInternal` (create)
-  - After `newNamedVertex` (namedCreate)
-  - After renaming helper (if provided later) (rename)
-- Ordering: enrichers run in registration order.
-- Enrichers should be side-effect free beyond setting properties on the target vertex; they should avoid long-running work.
-
-### Built-in enrichers
-- `withCreatedAt()` – sets `createdAt` if absent
-  - Implementation detail: store as ISO internally for CRDT ops, expose as Date in convenience getters/binding if desired.
-- Optional: `withNameFromArg()` – for `newNamedChild`, ensure `name` is set to the provided name if missing in props.
+- Execution point: after vertex creation (`create`).
+- Ordering: registration order.
+- Built-in: `withCreatedAt()` – sets `createdAt` if absent (store ISO for ops; expose Date via helpers if desired).
 
 ## API Sketch
 
@@ -88,12 +79,13 @@ class RepTree {
   - Default: no alias rules; reads/writes pass through
   - Optionally accept aliases for advanced cases, but default config should not add `name`/`createdAt` rules
 
-## Migration Plan
-1. Introduce enrichment API (no breaking changes yet). Keep existing `_n`/`_c` behavior.
-2. Add built-in `withCreatedAt` and switch defaults in docs/examples to use it.
-3. Switch `newNamedVertex` to write `name` in parallel to `_n` (temp dual-write) while updating consumers (`getVertexByPath`, printing, sorting) to prefer `name` if present.
-4. Update `Vertex.name` and binding defaults to prefer `name`/`createdAt` and remove default aliasing rules.
-5. Remove `_n`/`_c` usage in codebase; keep a compatibility layer for reading them if encountered in older ops.
+## Migration
+No backwards compatibility or migration layer. We will change logic directly:
+
+- `newNamedVertex` now writes `name` (no `_n`).
+- Stop auto-writing `_c`.
+- Introduce optional `withCreatedAt()` enricher for teams that want creation dates.
+- Update lookups/printing/sorting to use `name` and `createdAt`.
 
 ## Trade-offs
 - Pros: simpler mental model, fewer special cases, public API matches stored keys
@@ -104,8 +96,7 @@ class RepTree {
 - Should `bindVertex` coerce `createdAt` to Date on read by default? Recommendation: yes, when the key is exactly `createdAt`, as a small convenience; or leave it to an optional alias rule for strictness.
 
 ## Minimal Implementation Steps
-- Implement `addEnricher` and run points in `RepTree`.
-- Create `withCreatedAt` helper and use in README examples.
-- Switch `newNamedVertex` to `name`, update `Vertex.name`, `getVertexByPath`, printing, and sorting to prefer `name`.
-- Remove default alias rules; keep optional alias support in `bindVertex`.
-- Provide a compatibility reader that maps `_n`→`name`, `_c`→`createdAt` when seen, during a deprecation window.
+- Implement `addEnricher` (post-create only) in `RepTree`.
+- Add `withCreatedAt` helper and use it in README examples.
+- Switch `newNamedVertex` to write `name`; update `Vertex.name`, `getVertexByPath`, printing, sorting to use `name`.
+- Remove default alias rules in `bindVertex`; keep optional alias support only when explicitly provided.
