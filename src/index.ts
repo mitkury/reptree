@@ -16,4 +16,5 @@ export * from './operations';
 export { default as uuid } from './uuid';
 
 // Reactive helpers (opt-in)
-export { bindVertex } from './reactive';
+export { bindVertex, defaultAliases } from './reactive';
+export type { BindedVertex, SchemaLike, BindOptions, AliasRule } from './reactive';

@@ -1,6 +1,6 @@
 import type { VertexState } from "./VertexState";
 import type { RepTree } from "./RepTree";
-import { bindVertex, type SchemaLike, type BindOptions } from './reactive';
+import { bindVertex, type SchemaLike, type BindOptions, type BindedVertex } from './reactive';
 import * as Y from 'yjs';
 import type { VertexChangeEvent, VertexPropertyType } from "./treeTypes";
 
@@ -170,7 +170,7 @@ export class Vertex {
   }
 
   /** Returns a live reactive object bound to this vertex. Accepts schema or options. */
-  bind<T extends Record<string, unknown>>(schemaOrOptions?: SchemaLike<T> | BindOptions<T>): T {
+  bind<T extends Record<string, unknown>>(schemaOrOptions?: SchemaLike<T> | BindOptions<T>): BindedVertex<T> {
     return bindVertex<T>(this.tree, this.id, schemaOrOptions as any);
   }
 

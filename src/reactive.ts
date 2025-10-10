@@ -33,6 +33,10 @@ export type BindOptions<T> = {
   includeInternalKeys?: boolean;
 };
 
+export type BindedVertex<T> = T & {
+  useTransient(fn: (t: T) => void): void;
+};
+
 function buildAliasMaps(aliases: AliasRule[]) {
   const publicToInternal = new Map<string, AliasRule>();
   const internalToPublic = new Map<string, AliasRule>();
@@ -57,6 +61,9 @@ function toPublicObject(tree: RepTree, id: string, internalToPublic: Map<string,
   return obj;
 }
 
+// Symbol for useTransient method to avoid property collisions
+const USE_TRANSIENT = Symbol('useTransient');
+
 /**
  * Returns a live object that proxies reads/writes to a vertex.
  * - Reads reflect the latest CRDT state.
@@ -67,7 +74,7 @@ export function bindVertex<T extends Record<string, unknown>>(
   tree: RepTree,
   id: string,
   schemaOrOptions?: SchemaLike<T> | BindOptions<T>
-): T {
+): BindedVertex<T> {
   const isOptions = typeof schemaOrOptions === 'object' && schemaOrOptions !== null && (
     Object.prototype.hasOwnProperty.call(schemaOrOptions as object, 'aliases') ||
     Object.prototype.hasOwnProperty.call(schemaOrOptions as object, 'includeInternalKeys') ||
@@ -80,8 +87,69 @@ export function bindVertex<T extends Record<string, unknown>>(
   const includeInternalKeys = options.includeInternalKeys ?? false;
   const { publicToInternal, internalToPublic } = buildAliasMaps(aliases);
 
-  return new Proxy({} as T, {
+  return new Proxy({} as BindedVertex<T>, {
     get(_target, prop: string | symbol) {
+      // Handle useTransient method
+      if (prop === USE_TRANSIENT || prop === 'useTransient') {
+        return (fn: (t: T) => void) => {
+          // Create a transient proxy (not yet implemented - will need writes: 'transient' support)
+          const transientProxy = new Proxy({} as T, {
+            get(_t, p: string | symbol) {
+              if (typeof p !== 'string') return undefined;
+              const rule = publicToInternal.get(p);
+              if (rule) {
+                const raw = tree.getVertexProperty(id, rule.internalKey);
+                return rule.toPublic ? rule.toPublic(raw as unknown) : raw;
+              }
+              return tree.getVertexProperty(id, p);
+            },
+            set(_t, p: string | symbol, value: unknown) {
+              if (typeof p !== 'string') return true;
+
+              // Validation (same as persistent)
+              if (schema?.shape && schema.shape[p]) {
+                const field = schema.shape[p];
+                if (field.safeParse) {
+                  const res = field.safeParse(value);
+                  if (!res.success) throw new Error(`Invalid value for ${String(p)}`);
+                  value = (res as any).data ?? value;
+                }
+              } else if (schema?.safeParse) {
+                const next = { ...toPublicObject(tree, id, internalToPublic), [p]: value } as unknown;
+                const res = schema.safeParse(next);
+                if (!res.success) throw new Error(`Invalid value for ${String(p)}`);
+                const parsed = (res as any).data as Record<string, unknown>;
+                if (parsed && Object.prototype.hasOwnProperty.call(parsed, p)) {
+                  value = parsed[p];
+                }
+              }
+
+              // Apply alias mapping and use setTransientVertexProperty
+              const rule = publicToInternal.get(p);
+              if (rule) {
+                const converted = rule.toInternal ? rule.toInternal(value) : value;
+                tree.setTransientVertexProperty(id, rule.internalKey, converted as any);
+                return true;
+              }
+
+              tree.setTransientVertexProperty(id, p, value as any);
+              return true;
+            },
+            deleteProperty(_t, p: string | symbol) {
+              if (typeof p !== 'string') return true;
+              const rule = publicToInternal.get(p);
+              if (rule) {
+                tree.setTransientVertexProperty(id, rule.internalKey, undefined as any);
+                return true;
+              }
+              tree.setTransientVertexProperty(id, p, undefined as any);
+              return true;
+            },
+          });
+          fn(transientProxy);
+        };
+      }
+
       if (typeof prop !== 'string') return undefined;
       const rule = publicToInternal.get(prop);
       if (rule) {
