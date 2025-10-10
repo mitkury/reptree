@@ -4,7 +4,7 @@
 - Introduce a simple, ergonomic transient-write API on `Vertex`:
 
 ```ts
-vertex.transient((t) => {
+vertex.useTransient((t) => {
   t.someProperty = 100; // transient (non‑permanent) change
 });
 
@@ -47,7 +47,7 @@ draft.name = 'Preview'; // transient write
 #### 1) Block‑scoped transient writes on `Vertex`
 
 ```ts
-vertex.transient((t) => {
+vertex.useTransient((t) => {
   t.someProperty = 100; // transient write
   delete t.temp;        // clears transient value (equivalent to setting undefined)
 });
@@ -65,7 +65,7 @@ vertex.transient((t) => {
 Optional typed form (leverages the same typing ergonomics as `bindVertex`):
 
 ```ts
-vertex.transient<Person>((t) => {
+vertex.useTransient<Person>((t) => {
   t.age = 30;
 });
 ```
@@ -73,7 +73,7 @@ vertex.transient<Person>((t) => {
 Validation variant (Zod‑like):
 
 ```ts
-vertex.transient({ schema: Person }, (t) => {
+vertex.useTransient({ schema: Person }, (t) => {
   t.name = 'Preview';
 });
 ```
@@ -133,7 +133,7 @@ Note: today we can clear a single key via `setTransientProperty(key, undefined)`
 
 ```ts
 // 1) Block-scoped API
-vertex.transient((t) => {
+vertex.useTransient((t) => {
   t.progress = 0.3;
   t.selection = ['v1', 'v2'];
 });
@@ -161,11 +161,11 @@ vertex.clearAllTransients();
      - When `writes === 'transient'`, call `tree.setTransientVertexProperty` instead of `setVertexProperty`.
      - Preserve existing alias mapping and optional schema validation.
 
-2) `Vertex.transient`
+2) `Vertex.useTransient`
    - Add method:
 
 ```ts
-transient<T extends Record<string, unknown>>(
+useTransient<T extends Record<string, unknown>>(
   fnOrOptions: ((t: T) => void) | { schema?: SchemaLike<T>; aliases?: AliasRule[] },
   maybeFn?: (t: T) => void,
 ): void
@@ -188,20 +188,9 @@ transient<T extends Record<string, unknown>>(
    - In transient write paths, if value is a `Y.Doc`, throw or warn and no‑op.
    - Keep current warning for transient non‑LWW properties.
 
-### Alternatives considered
-- `vertex.transients.someProperty = 100` (a persistent proxy property)
-  - Pros: terse for ad‑hoc writes.
-  - Cons: property name may be confused with data, unclear lifecycle; block‑scoped API communicates intent better.
-- `vertex.setProperty(key, value, { transient: true })`
-  - Avoids method explosion but complicates typing and readability; we already expose `setTransientProperty` for low‑level use.
-- `bindTransientVertex(...)` helper
-  - Could be a small alias around `bindVertex(..., { writes: 'transient' })`. Optional sugar.
-- Process‑wide `tree.withTransientWrites(fn)`
-  - Overly broad; easy to misuse and hard to reason about in concurrent UI flows.
-
 ### Developer impact
 - Very small learning surface:
-  - Use `vertex.transient(fn)` for one‑off blocks.
+- Use `vertex.useTransient(fn)` for one‑off blocks.
   - Use `bindVertex(..., { writes: 'transient' })` for UI reactive drafts.
   - Commit by performing a persistent write; the system clears the transient overlay for that key.
 - Backward compatible; no breaking changes.
@@ -214,4 +203,4 @@ transient<T extends Record<string, unknown>>(
 ---
 
 ### Recommendation
-Implement `vertex.transient(fn)` and `bindVertex(..., { writes: 'transient' })` first. Add the convenience clear helpers and event metadata as follow‑ups. This provides an ergonomic, low‑risk developer experience on top of the existing transient CRDT machinery, while keeping replication and storage semantics clear and predictable.
+Implement `vertex.useTransient(fn)` and `bindVertex(..., { writes: 'transient' })` first. Add the convenience clear helpers and event metadata as follow‑ups. This provides an ergonomic, low‑risk developer experience on top of the existing transient CRDT machinery, while keeping replication and storage semantics clear and predictable.
