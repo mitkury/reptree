@@ -10,6 +10,7 @@ RepTree is an in-memory, JavaScript runtime, hierarchical, tree-structured, dist
 - **Property System**: Each vertex contains key-value properties
 - **Dual Property Types**: Supports both persistent and transient properties
 - **Vertex Relocation**: Vertices can be moved within the tree while maintaining consistency
+- **Strong Eventual Consistency**: All replicas eventually converge to identical states
 
 ## CRDT Foundation
 
@@ -18,7 +19,6 @@ RepTree employs a multi-CRDT architecture for distributed operation:
 - **Move Tree CRDT**: Handles structural operations (based on [Kleppmann's paper](https://martin.kleppmann.com/papers/move-op.pdf))
 - **Last-Writer-Wins (LWW) CRDT**: Manages property values with simple conflict resolution
 - **Yjs CRDT**: Provides fine-grained collaborative editing for complex data structures
-- **Strong Eventual Consistency**: All replicas eventually converge to identical states
 
 ## Operation-Based Storage
 

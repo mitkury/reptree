@@ -24,9 +24,7 @@
     "dev": "tsup --watch",
     "pretest": "npm run build",
     "test": "vitest",
-    "prepublishOnly": "npm run build",
-    "pretest:light": "npm run build",
-    "test:light": "vitest run --config vitest.light.config.ts"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "crdt",

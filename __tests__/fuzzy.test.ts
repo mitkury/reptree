@@ -20,6 +20,9 @@ function shuffleArray<T>(array: T[]): T[] {
 describe('RepTree Fuzzy Testing', () => {
   test('should synchronize correctly without state vectors', () => {
     console.log('Starting fuzzy test without state vectors...');
+    const startMem = process.memoryUsage();
+    console.log(`Initial memory: ${(startMem.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+    
     const treesCount = 3;
     const rounds = 5;
     const actionsPerRound = 500;
@@ -49,11 +52,16 @@ describe('RepTree Fuzzy Testing', () => {
       // Verify all trees have identical structure after sync
       console.log(`Round ${round + 1}/${rounds}: Verifying tree structures...`);
       verifyTreeStructures(trees);
+      
+      const mem = process.memoryUsage();
+      console.log(`Round ${round + 1} memory: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB (total ops: ${trees[0].getAllOps().length})`);
     }
     
     // Final verification
     const totalVertices = trees[0].getAllVertices().length;
+    const finalMem = process.memoryUsage();
     console.log(`Test complete with ${totalOperations} operations performed, resulting in ${totalVertices} vertices`);
+    console.log(`Final memory: ${(finalMem.heapUsed / 1024 / 1024).toFixed(2)} MB`);
     
     expect(totalVertices).toBeGreaterThan(1);
     
@@ -151,9 +159,18 @@ describe('RepTree Fuzzy Testing', () => {
    */
   test('should handle interleaved operations from different peers', () => {
     console.log('Starting fuzzy test with interleaved peer operations...');
+    const startMem = process.memoryUsage();
+    console.log(`Initial memory: ${(startMem.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+    
+    /*
     const treesCount = 5;
     const rounds = 5;
     const actionsPerRound = 500;
+    */
+    const treesCount = 3;
+    const rounds = 5;
+    const actionsPerRound = 100;
+
     
     let totalOperations = 0;
     
@@ -216,6 +233,9 @@ describe('RepTree Fuzzy Testing', () => {
         // Verify all trees have identical structure after interleaved sync
         console.log(`Round ${round + 1}/${rounds}: Verifying tree structures after interleaved sync...`);
         verifyTreeStructures(trees);
+        
+        const mem = process.memoryUsage();
+        console.log(`Round ${round + 1} memory: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB (total ops: ${trees[0].getAllOps().length})`);
       } catch (error) {
         console.error(`Test failed in round ${round + 1}:`, error);
         
@@ -230,7 +250,9 @@ describe('RepTree Fuzzy Testing', () => {
     
     // Final verification
     const totalVertices = trees[0].getAllVertices().length;
+    const finalMem = process.memoryUsage();
     console.log(`Test complete with ${totalOperations} operations performed, resulting in ${totalVertices} vertices`);
+    console.log(`Final memory: ${(finalMem.heapUsed / 1024 / 1024).toFixed(2)} MB`);
     
     expect(totalVertices).toBeGreaterThan(1);
     

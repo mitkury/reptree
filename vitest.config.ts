@@ -5,6 +5,13 @@ export default defineConfig({
     include: ['__tests__/**/*.test.ts'],
     globals: true,
     environment: 'node',
-    testTimeout: 60 * 60 * 1000,
+    /*testTimeout: 60 * 60 * 1000,*/
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        singleFork: false,
+      },
+    },
+    watch: false,
   },
 }); 

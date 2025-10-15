@@ -68,6 +68,37 @@ person.age = 34;     // ok, validated
 - The returned object is a Proxy that forwards reads/writes to the vertex.
 - If a schema is provided, it validates writes. Field-level validation is used when available via `schema.shape`, otherwise a safe whole-object validation is attempted.
 
+## Transient writes (drafts)
+
+RepTree supports transient (non‑persistent) overlays for quick UI drafts.
+
+- **useTransient(fn)**: apply transient edits that override reads but do not persist yet.
+- **commitTransients()**: promote current transient overlays to persistent values.
+
+```ts
+const person = bindVertex(tree, v.id, Person);
+
+// Draft changes (not yet persistent)
+person.useTransient(p => {
+  p.name = 'Alice (draft)';   // transient overlay
+  p.age = 34;                 // transient overlay
+});
+
+console.log(person.name); // 'Alice (draft)' — reads include transients
+
+// Promote all transient overlays to persistent CRDT properties
+person.commitTransients();
+
+// Now reads reflect the persisted values even without the overlay
+console.log(person.name); // 'Alice (draft)'
+```
+
+Notes:
+
+- Aliases apply for transient edits too (e.g., `createdAt` ↔ `_c` with Date↔ISO conversion).
+- If a schema is provided, transient writes are validated/coerced the same as persistent writes; `commitTransients()` persists the validated values.
+- Persistent writes with a newer operation automatically clear the transient overlay for that key.
+
 ## Creating children with normalized props
 
 `vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:

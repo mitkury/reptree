@@ -34,7 +34,15 @@ export type BindOptions<T> = {
 };
 
 export type BindedVertex<T> = T & {
+  /**
+   * Create a transient proxy that can be used to write transient properties.
+   */
   useTransient(fn: (t: T) => void): void;
+
+  /**
+   * Promote transient properties to persistent.
+   */
+  commitTransients(): void;
 };
 
 function buildAliasMaps(aliases: AliasRule[]) {
@@ -61,8 +69,9 @@ function toPublicObject(tree: RepTree, id: string, internalToPublic: Map<string,
   return obj;
 }
 
-// Symbol for useTransient method to avoid property collisions
-const USE_TRANSIENT = Symbol('useTransient');
+// Reserved method names (string-based API for ergonomics)
+const RESERVED_METHOD_USE_TRANSIENT = 'useTransient';
+const RESERVED_METHOD_COMMIT_TRANSIENTS = 'commitTransients';
 
 /**
  * Returns a live object that proxies reads/writes to a vertex.
@@ -90,7 +99,7 @@ export function bindVertex<T extends Record<string, unknown>>(
   return new Proxy({} as BindedVertex<T>, {
     get(_target, prop: string | symbol) {
       // Handle useTransient method
-      if (prop === USE_TRANSIENT || prop === 'useTransient') {
+      if (prop === RESERVED_METHOD_USE_TRANSIENT) {
         return (fn: (t: T) => void) => {
           // Create a transient proxy (not yet implemented - will need writes: 'transient' support)
           const transientProxy = new Proxy({} as T, {
@@ -150,6 +159,53 @@ export function bindVertex<T extends Record<string, unknown>>(
         };
       }
 
+      // Handle commitTransients(): promote existing transient overlays to persistent values
+      if (prop === RESERVED_METHOD_COMMIT_TRANSIENTS) {
+        return () => {
+          // Enumerate all keys visible with transient overlay applied
+          const entries = tree.getVertexProperties(id);
+
+          // Build a public object snapshot for whole-object validation when needed
+          const currentPublic = schema?.safeParse ? toPublicObject(tree, id, internalToPublic) : undefined;
+
+          for (const { key: internalKey, value: overlayValue } of entries) {
+            // Compare with underlying persistent value to detect transient overlay
+            const persistentValue = tree.getVertexProperty(id, internalKey, false);
+            if (overlayValue === persistentValue) continue;
+
+            // Resolve public key and value for validation
+            const aliasRule = internalToPublic.get(internalKey);
+            const publicKey = aliasRule ? aliasRule.publicKey : internalKey;
+            const publicValue = aliasRule && aliasRule.toPublic ? aliasRule.toPublic(overlayValue as unknown) : overlayValue;
+
+            let valueToPersistInternal: unknown = overlayValue;
+
+            // Field-level validation
+            if (schema?.shape && schema.shape[publicKey]) {
+              const field = schema.shape[publicKey]!;
+              if (field.safeParse) {
+                const res = field.safeParse(publicValue);
+                if (!res.success) throw new Error(`Invalid value for ${String(publicKey)}`);
+                const coerced = (res as any).data;
+                const maybeInternal = aliasRule && aliasRule.toInternal ? aliasRule.toInternal(coerced) : coerced;
+                valueToPersistInternal = maybeInternal;
+              }
+            } else if (schema?.safeParse && currentPublic) {
+              const nextPublic = { ...currentPublic, [publicKey]: publicValue } as unknown;
+              const res = schema.safeParse(nextPublic);
+              if (!res.success) throw new Error('Invalid values for commitTransients');
+              const parsed = (res as any).data as Record<string, unknown>;
+              const parsedPublic = Object.prototype.hasOwnProperty.call(parsed, publicKey) ? parsed[publicKey] : publicValue;
+              const maybeInternal = aliasRule && aliasRule.toInternal ? aliasRule.toInternal(parsedPublic) : parsedPublic;
+              valueToPersistInternal = maybeInternal;
+            }
+
+            // Persist using internal key
+            tree.setVertexProperty(id, internalKey, valueToPersistInternal as any);
+          }
+        };
+      }
+
       if (typeof prop !== 'string') return undefined;
       const rule = publicToInternal.get(prop);
       if (rule) {
@@ -161,6 +217,10 @@ export function bindVertex<T extends Record<string, unknown>>(
     },
     set(_target, prop: string | symbol, value: unknown) {
       if (typeof prop !== 'string') return true;
+      // Guard reserved method names from being persisted as properties
+      if (prop === RESERVED_METHOD_USE_TRANSIENT || prop === RESERVED_METHOD_COMMIT_TRANSIENTS) {
+        return true;
+      }
 
       // Prefer field-level validation when available (validate public keys)
       if (schema?.shape && schema.shape[prop]) {
@@ -195,6 +255,10 @@ export function bindVertex<T extends Record<string, unknown>>(
     },
     deleteProperty(_target, prop: string | symbol) {
       if (typeof prop !== 'string') return true;
+      // Guard reserved method names
+      if (prop === RESERVED_METHOD_USE_TRANSIENT || prop === RESERVED_METHOD_COMMIT_TRANSIENTS) {
+        return true;
+      }
       const rule = publicToInternal.get(prop);
       if (rule) {
         tree.setVertexProperty(id, rule.internalKey, undefined as any);

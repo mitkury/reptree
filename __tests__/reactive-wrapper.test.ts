@@ -178,4 +178,44 @@ describe('bindVertex reactive wrapper', () => {
     expect(tree.getVertexProperty(v.id, '_n')).toBe('Gina');
     expect(tree.getVertexProperty(v.id, '_c')).toBe(now.toISOString());
   });
+
+  test('commitTransients promotes previous transient writes to persistent', () => {
+    const tree = new RepTree('peer1');
+    const root = tree.createRoot();
+    const v = tree.newVertex(root.id);
+
+    const Person = z.object({
+      name: z.string(),
+      age: z.number().int().min(0),
+      createdAt: z.date().optional(),
+    });
+
+    const person = bindVertex(tree, v.id, Person);
+
+    // Transient edits first
+    const when = new Date('2025-01-03T00:00:00.000Z');
+    person.useTransient(p => {
+      p.name = 'Draft' as any;
+      p.age = 25 as any;
+      p.createdAt = when as any;
+    });
+
+    // Reads reflect transient overlay (with alias conversion for createdAt)
+    expect(person.name).toBe('Draft');
+    expect(person.age).toBe(25);
+    const createdAt = person['createdAt' as keyof typeof person] as unknown as Date;
+    expect(createdAt instanceof Date).toBe(true);
+    expect(createdAt.toISOString()).toBe(when.toISOString());
+
+    // Underlying persistent values haven't been set yet (except _c which is created at creation time)
+    expect(tree.getVertexProperty(v.id, '_n', false)).toBeUndefined();
+    expect(tree.getVertexProperty(v.id, 'age', false)).toBeUndefined();
+
+    // Promote transients -> persist them
+    person.commitTransients();
+    expect(tree.getVertexProperty(v.id, '_n', false)).toBe('Draft');
+    expect(tree.getVertexProperty(v.id, 'age', false)).toBe(25);
+    // createdAt persisted as ISO
+    expect(tree.getVertexProperty(v.id, '_c', false)).toBe(when.toISOString());
+  });
 });
