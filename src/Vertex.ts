@@ -107,6 +107,10 @@ export class Vertex {
     this.tree.setTransientVertexProperty(this.id, key, value);
   }
 
+  commitTransients(): void {
+    this.tree.commitTransients(this.id);
+  }
+
   setProperties(props: Record<string, VertexPropertyType> | object): void {
     for (const [key, value] of Object.entries(props)) {
       this.setProperty(key, value);

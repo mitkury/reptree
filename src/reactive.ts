@@ -118,282 +118,322 @@ export function bindVertex<T extends Record<string, unknown>>(
   const includeInternalKeys = options.includeInternalKeys ?? false;
   const { publicToInternal, internalToPublic } = buildAliasMaps(aliases);
 
-  // Cache structural methods to maintain reference equality
-  const cachedMethods = new Map<string, any>();
 
-  return new Proxy({} as BindedVertex<T>, {
-    get(_target, prop: string | symbol) {
-      // Handle useTransient method
-      if (prop === RESERVED_METHOD_USE_TRANSIENT) {
-        return (fn: (t: T) => void) => {
-          // Create a transient proxy (not yet implemented - will need writes: 'transient' support)
-          const transientProxy = new Proxy({} as T, {
-            get(_t, p: string | symbol) {
-              if (typeof p !== 'string') return undefined;
-              const rule = publicToInternal.get(p);
-              if (rule) {
-                const raw = tree.getVertexProperty(id, rule.internalKey);
-                return rule.toPublic ? rule.toPublic(raw as unknown) : raw;
-              }
-              return tree.getVertexProperty(id, p);
-            },
-            set(_t, p: string | symbol, value: unknown) {
-              if (typeof p !== 'string') return true;
+  // Plain object with properties stored locally for Svelte's reactivity tracking
+  const obj: any = {};
+  let isObserverUpdate = false;
 
-              // Validation (same as persistent)
-              if (schema?.shape && schema.shape[p]) {
-                const field = schema.shape[p];
-                if (field.safeParse) {
-                  const res = field.safeParse(value);
-                  if (!res.success) throw new Error(`Invalid value for ${String(p)}`);
-                  value = (res as any).data ?? value;
-                }
-              } else if (schema?.safeParse) {
-                const next = { ...toPublicObject(tree, id, internalToPublic), [p]: value } as unknown;
-                const res = schema.safeParse(next);
-                if (!res.success) throw new Error(`Invalid value for ${String(p)}`);
-                const parsed = (res as any).data as Record<string, unknown>;
-                if (parsed && Object.prototype.hasOwnProperty.call(parsed, p)) {
-                  value = parsed[p];
-                }
-              }
+  // Define getters/setters for schema properties and aliases (only when schema exists)
+  const propsToDefine = new Set<string>();
+  if (schema?.shape) {
+    Object.keys(schema.shape).forEach(key => propsToDefine.add(key));
+    // Also add aliases when schema exists
+    aliases.forEach(alias => propsToDefine.add(alias.publicKey));
+  }
 
-              // Apply alias mapping and use setTransientVertexProperty
-              const rule = publicToInternal.get(p);
-              if (rule) {
-                const converted = rule.toInternal ? rule.toInternal(value) : value;
-                tree.setTransientVertexProperty(id, rule.internalKey, converted as any);
-                return true;
-              }
+  // Storage for local values (Svelte tracks these!)
+  const localValues = new Map<string, unknown>();
 
-              tree.setTransientVertexProperty(id, p, value as any);
-              return true;
-            },
-            deleteProperty(_t, p: string | symbol) {
-              if (typeof p !== 'string') return true;
-              const rule = publicToInternal.get(p);
-              if (rule) {
-                tree.setTransientVertexProperty(id, rule.internalKey, undefined as any);
-                return true;
-              }
-              tree.setTransientVertexProperty(id, p, undefined as any);
-              return true;
-            },
-          });
-          fn(transientProxy);
-        };
-      }
+  // Initialize local values from CRDT
+  propsToDefine.forEach(publicKey => {
+    const rule = publicToInternal.get(publicKey);
+    const internalKey = rule?.internalKey ?? publicKey;
+    const rawValue = tree.getVertexProperty(id, internalKey);
+    const publicValue = rule?.toPublic ? rule.toPublic(rawValue as unknown) : rawValue;
+    localValues.set(publicKey, publicValue);
+  });
 
-      // Handle commitTransients(): promote existing transient overlays to persistent values
-      if (prop === RESERVED_METHOD_COMMIT_TRANSIENTS) {
-        return () => {
-          // Enumerate all keys visible with transient overlay applied
-          const entries = tree.getVertexProperties(id);
-
-          // Build a public object snapshot for whole-object validation when needed
-          const currentPublic = schema?.safeParse ? toPublicObject(tree, id, internalToPublic) : undefined;
-
-          for (const { key: internalKey, value: overlayValue } of entries) {
-            // Compare with underlying persistent value to detect transient overlay
-            const persistentValue = tree.getVertexProperty(id, internalKey, false);
-            if (overlayValue === persistentValue) continue;
-
-            // Resolve public key and value for validation
-            const aliasRule = internalToPublic.get(internalKey);
-            const publicKey = aliasRule ? aliasRule.publicKey : internalKey;
-            const publicValue = aliasRule && aliasRule.toPublic ? aliasRule.toPublic(overlayValue as unknown) : overlayValue;
-
-            let valueToPersistInternal: unknown = overlayValue;
-
-            // Field-level validation
+  propsToDefine.forEach(publicKey => {
+    const rule = publicToInternal.get(publicKey);
+    const storageKey = `_${publicKey}_value`; // Svelte-friendly storage key
+    
+    // Initialize on obj for Svelte to track
+    obj[storageKey] = localValues.get(publicKey);
+    
+    Object.defineProperty(obj, publicKey, {
+      get: function() {
+        // Read from CRDT including transients, then cache locally
+        const internalKey = rule?.internalKey ?? publicKey;
+        const rawValue = tree.getVertexProperty(id, internalKey, true); // Include transients!
+        const publicValue = rule?.toPublic ? rule.toPublic(rawValue as unknown) : rawValue;
+        
+        // Update local storage for Svelte tracking
+        if (this[storageKey] !== publicValue) {
+          this[storageKey] = publicValue;
+        }
+        
+        return publicValue;
+      },
+      set: function(value: unknown) {
+        // Validate
             if (schema?.shape && schema.shape[publicKey]) {
               const field = schema.shape[publicKey]!;
               if (field.safeParse) {
-                const res = field.safeParse(publicValue);
-                if (!res.success) throw new Error(`Invalid value for ${String(publicKey)}`);
-                const coerced = (res as any).data;
-                const maybeInternal = aliasRule && aliasRule.toInternal ? aliasRule.toInternal(coerced) : coerced;
-                valueToPersistInternal = maybeInternal;
-              }
-            } else if (schema?.safeParse && currentPublic) {
-              const nextPublic = { ...currentPublic, [publicKey]: publicValue } as unknown;
-              const res = schema.safeParse(nextPublic);
-              if (!res.success) throw new Error('Invalid values for commitTransients');
-              const parsed = (res as any).data as Record<string, unknown>;
-              const parsedPublic = Object.prototype.hasOwnProperty.call(parsed, publicKey) ? parsed[publicKey] : publicValue;
-              const maybeInternal = aliasRule && aliasRule.toInternal ? aliasRule.toInternal(parsedPublic) : parsedPublic;
-              valueToPersistInternal = maybeInternal;
-            }
+            const res = field.safeParse(value);
+            if (!res.success) throw new Error(`Invalid value for ${publicKey}`);
+            value = (res as any).data;
+          }
+        }
+        
+        // Update local value using 'this' (Svelte tracks this!)
+        this[storageKey] = value;
+        
+        // Sync to CRDT (unless this is from observer)
+        if (!isObserverUpdate) {
+          const internalKey = rule?.internalKey ?? publicKey;
+          const internalValue = rule?.toInternal ? rule.toInternal(value) : value;
+          tree.setVertexProperty(id, internalKey, internalValue as any);
+        }
+      },
+      enumerable: true,
+      configurable: true
+    });
+  });
 
-            // Persist using internal key
-            tree.setVertexProperty(id, internalKey, valueToPersistInternal as any);
-          }
-        };
-      }
+  // Define $ properties and methods
+  const cachedMethods = new Map<string, any>();
+  const getCachedMethod = (name: string, factory: () => any) => {
+    if (!cachedMethods.has(name)) {
+      cachedMethods.set(name, factory());
+    }
+    return cachedMethods.get(name);
+  };
 
-      // Handle vertex properties
-      if (typeof prop === 'string') {
-        if (prop === '$id') return id;
-        if (prop === '$parentId') return tree.getVertex(id)?.parentId ?? null;
-        if (prop === '$parent') {
-          const vertex = tree.getVertex(id);
-          return vertex?.parent;
-        }
-        if (prop === '$children') return tree.getChildren(id);
-        if (prop === '$childrenIds') return tree.getChildrenIds(id);
-
-        // Handle vertex methods (cached for reference equality)
-        if (prop === '$moveTo') {
-          if (!cachedMethods.has(prop)) {
-            cachedMethods.set(prop, (parent: any) => {
-              // parent can be Vertex or BindedVertex - extract ID
-              const parentId = typeof parent === 'object' && parent !== null ? (parent.id || parent.$id) : parent;
-              tree.moveVertex(id, parentId);
-            });
-          }
-          return cachedMethods.get(prop);
-        }
-        if (prop === '$delete') {
-          if (!cachedMethods.has(prop)) {
-            cachedMethods.set(prop, () => tree.deleteVertex(id));
-          }
-          return cachedMethods.get(prop);
-        }
-        if (prop === '$observe') {
-          if (!cachedMethods.has(prop)) {
-            cachedMethods.set(prop, (listener: (events: any[]) => void) => tree.observe(id, listener));
-          }
-          return cachedMethods.get(prop);
-        }
-        if (prop === '$observeChildren') {
-          if (!cachedMethods.has(prop)) {
-            cachedMethods.set(prop, (listener: (children: any[]) => void) => {
-              return tree.observe(id, (events: any[]) => {
-                if (events.some((e: any) => e.type === 'children')) {
-                  listener(tree.getChildren(id));
-                }
-              });
-            });
-          }
-          return cachedMethods.get(prop);
-        }
-        if (prop === '$newChild') {
-          if (!cachedMethods.has(prop)) {
-            cachedMethods.set(prop, (props?: Record<string, any> | object | null) => {
-              const vertex = tree.getVertex(id);
-              return vertex?.newChild(props);
-            });
-          }
-          return cachedMethods.get(prop);
-        }
-        if (prop === '$newNamedChild') {
-          if (!cachedMethods.has(prop)) {
-            cachedMethods.set(prop, (name: string, props?: Record<string, any> | object | null) => {
-              const vertex = tree.getVertex(id);
-              return vertex?.newNamedChild(name, props);
-            });
-          }
-          return cachedMethods.get(prop);
-        }
-      }
-
-      if (typeof prop !== 'string') return undefined;
-      const rule = publicToInternal.get(prop);
-      if (rule) {
-        const raw = tree.getVertexProperty(id, rule.internalKey);
-        return rule.toPublic ? rule.toPublic(raw as unknown) : raw;
-      }
-      // Fallback to direct property access
-      return tree.getVertexProperty(id, prop);
+  Object.defineProperties(obj, {
+    $id: {
+      get: () => id,
+      set: () => {}, // No-op setter (silently ignore)
+      enumerable: false,
+      configurable: true
     },
-    set(_target, prop: string | symbol, value: unknown) {
-      if (typeof prop !== 'string') return true;
-      // Guard reserved method names from being persisted as properties
-      if (prop === RESERVED_METHOD_USE_TRANSIENT || prop === RESERVED_METHOD_COMMIT_TRANSIENTS) {
-        return true;
-      }
-      // Guard vertex properties from being set
-      if (VERTEX_PROPS.includes(prop as any)) {
-        return true;
-      }
-      // Guard vertex methods from being set
-      if (VERTEX_METHODS.includes(prop as any)) {
-        return true;
-      }
-
-      // Prefer field-level validation when available (validate public keys)
-      if (schema?.shape && schema.shape[prop]) {
-        const field = schema.shape[prop];
-        if (field.safeParse) {
-          const res = field.safeParse(value);
-          if (!res.success) throw new Error(`Invalid value for ${String(prop)}`);
-          value = (res as any).data ?? value;
+    $parentId: {
+      get: () => tree.getVertex(id)?.parentId ?? null,
+      set: () => {}, // No-op setter
+      enumerable: false,
+      configurable: true
+    },
+    $parent: {
+      get: () => tree.getVertex(id)?.parent,
+      set: () => {}, // No-op setter
+      enumerable: false,
+      configurable: true
+    },
+    $children: {
+      get: () => tree.getChildren(id),
+      set: () => {}, // No-op setter
+      enumerable: false,
+      configurable: true
+    },
+    $childrenIds: {
+      get: () => tree.getChildrenIds(id),
+      set: () => {}, // No-op setter
+      enumerable: false,
+      configurable: true
+    },
+    $moveTo: {
+      get: () => getCachedMethod('$moveTo', () => (parent: any) => {
+        const parentId = typeof parent === 'object' && parent !== null ? (parent.id || parent.$id) : parent;
+        tree.moveVertex(id, parentId);
+      }),
+      set: () => {}, // No-op setter
+      enumerable: false,
+      configurable: true
+    },
+    $delete: {
+      get: () => getCachedMethod('$delete', () => () => tree.deleteVertex(id)),
+      set: () => {}, // No-op setter
+      enumerable: false,
+      configurable: true
+    },
+    $observe: {
+      get: () => getCachedMethod('$observe', () => (listener: (events: any[]) => void) => tree.observe(id, listener)),
+      set: () => {}, // No-op setter
+      enumerable: false,
+      configurable: true
+    },
+    $observeChildren: {
+      get: () => getCachedMethod('$observeChildren', () => (listener: (children: any[]) => void) => {
+        return tree.observe(id, (events: any[]) => {
+          if (events.some((e: any) => e.type === 'children')) {
+            listener(tree.getChildren(id));
+          }
+        });
+      }),
+      set: () => {}, // No-op setter
+      enumerable: false,
+      configurable: true
+    },
+    $newChild: {
+      get: () => getCachedMethod('$newChild', () => (props?: Record<string, any> | object | null) => {
+        const vertex = tree.getVertex(id);
+        return vertex?.newChild(props);
+      }),
+      set: () => {}, // No-op setter
+      enumerable: false,
+      configurable: true
+    },
+    $newNamedChild: {
+      get: () => getCachedMethod('$newNamedChild', () => (name: string, props?: Record<string, any> | object | null) => {
+        const vertex = tree.getVertex(id);
+        return vertex?.newNamedChild(name, props);
+      }),
+      set: () => {}, // No-op setter
+      enumerable: false,
+      configurable: true
+    },
+    useTransient: {
+      value: function(fn: (t: any) => void) {
+        // Create a transient proxy that writes transient properties
+        const transientProxy = new Proxy({} as any, {
+          set(_, prop: string | symbol, value: unknown) {
+            if (typeof prop === 'string') {
+              // Check if it's an alias
+              const rule = publicToInternal.get(prop);
+              const internalKey = rule?.internalKey ?? prop;
+              const internalValue = rule?.toInternal ? rule.toInternal(value) : value;
+              tree.setTransientVertexProperty(id, internalKey, internalValue as any);
+            }
+            return true;
+          },
+          get(_, prop: string | symbol) {
+            if (typeof prop !== 'string') return undefined;
+            // Read from transient or persistent
+            const rule = publicToInternal.get(prop);
+            const internalKey = rule?.internalKey ?? prop;
+            const rawValue = tree.getVertexProperty(id, internalKey, true);
+            return rule?.toPublic ? rule.toPublic(rawValue as unknown) : rawValue;
+          }
+        });
+        fn(transientProxy);
+      },
+      enumerable: false,
+      configurable: true
+    },
+    commitTransients: {
+      value: function() {
+        tree.commitTransients(id);
+      },
+      enumerable: false,
+      configurable: true
+    },
+    equals: {
+      value: function(other: any) {
+        if (other && typeof other === 'object' && '$id' in other) {
+          return other.$id === id;
         }
-      } else if (schema?.safeParse) {
-        // Fallback to whole-object validation when field schema is unavailable
-        const next = { ...toPublicObject(tree, id, internalToPublic), [prop]: value } as unknown;
-        const res = schema.safeParse(next);
-        if (!res.success) throw new Error(`Invalid value for ${String(prop)}`);
-        // If schema coerces/transforms, apply coerced value
-        const parsed = (res as any).data as Record<string, unknown>;
-        if (parsed && Object.prototype.hasOwnProperty.call(parsed, prop)) {
-          value = parsed[prop];
+        return obj === other;
+      },
+      enumerable: false,
+      configurable: true
+    }
+  });
+
+  // Observer: sync CRDT changes to local values
+  tree.observe(id, (events) => {
+    isObserverUpdate = true;
+    for (const e of events) {
+      if (e.type === 'property') {
+        const propEvent = e as any; // VertexPropertyChangeEvent
+        const rule = internalToPublic.get(propEvent.key);
+        if (rule) {
+          const publicKey = rule.publicKey;
+          const publicValue = rule.toPublic ? rule.toPublic(propEvent.value as unknown) : propEvent.value;
+          const storageKey = `_${publicKey}_value`;
+          if (storageKey in obj) {
+            obj[storageKey] = publicValue;
+          }
         }
       }
+    }
+    isObserverUpdate = false;
+  });
 
-      // Apply alias mapping (convert public key/value to internal)
+  // For schema vertices: return plain object (Svelte-compatible!)
+  // They can't use `delete` operator but can set to undefined or use a helper
+  if (schema) {
+    return obj as BindedVertex<T>;
+  }
+
+  // For non-schema vertices: wrap in Proxy for dynamic properties
+  const proxy = new Proxy(obj, {
+    get(target, prop: string | symbol) {
+      if (typeof prop !== 'string') {
+        return target[prop as any];
+      }
+      if (prop in target || prop.startsWith('$') || prop === 'equals') {
+        return target[prop as any];
+      }
+      
+      // Check if this is an alias
       const rule = publicToInternal.get(prop);
       if (rule) {
-        const converted = rule.toInternal ? rule.toInternal(value) : value;
-        tree.setVertexProperty(id, rule.internalKey, converted as any);
+        const internalKey = rule.internalKey;
+        const rawValue = tree.getVertexProperty(id, internalKey);
+        const result = rule.toPublic ? rule.toPublic(rawValue as unknown) : rawValue;
+        return result;
+      }
+      
+      // Dynamic property - read from CRDT
+      const rawValue = tree.getVertexProperty(id, prop);
+      return rawValue;
+    },
+    
+    set(target, prop: string | symbol, value: unknown) {
+      if (typeof prop !== 'string') {
+        target[prop as any] = value;
         return true;
       }
 
+      // If it's a defined property with a setter (schema props), use it
+      const descriptor = Object.getOwnPropertyDescriptor(target, prop);
+      if (descriptor && descriptor.set) {
+        target[prop as any] = value;
+        return true;
+      }
+      
+      // Check if this is an alias
+      const rule = publicToInternal.get(prop);
+      if (rule) {
+        const internalKey = rule.internalKey;
+        const internalValue = rule.toInternal ? rule.toInternal(value) : value;
+        tree.setVertexProperty(id, internalKey, internalValue as any);
+        return true;
+      }
+
+      // Dynamic property - write to CRDT directly (don't create on target!)
       tree.setVertexProperty(id, prop, value as any);
       return true;
     },
-    deleteProperty(_target, prop: string | symbol) {
-      if (typeof prop !== 'string') return true;
-      // Guard reserved method names
-      if (prop === RESERVED_METHOD_USE_TRANSIENT || prop === RESERVED_METHOD_COMMIT_TRANSIENTS) {
+    
+    deleteProperty(target, prop: string | symbol) {
+      if (typeof prop !== 'string') {
+        delete target[prop as any];
         return true;
       }
-      // Guard vertex properties
-      if (VERTEX_PROPS.includes(prop as any)) {
-        return true;
+      
+      // For schema properties, also clear the storage key
+      const storageKey = `_${prop}_value`;
+      if (storageKey in target) {
+        delete target[storageKey];
       }
-      // Guard vertex methods
-      if (VERTEX_METHODS.includes(prop as any)) {
-        return true;
+      
+      // Delete the property descriptor if it exists
+      if (prop in target) {
+        delete target[prop as any];
       }
+      
+      // Check if this is an alias or schema property - clear from CRDT
       const rule = publicToInternal.get(prop);
       if (rule) {
         tree.setVertexProperty(id, rule.internalKey, undefined as any);
         return true;
       }
+      
+      // Dynamic property - clear from CRDT
       tree.setVertexProperty(id, prop, undefined as any);
       return true;
-    },
-    has(_target, prop: string | symbol) {
-      if (typeof prop !== 'string') return false;
-      // Expose public keys by default when schema is present
-      if (schema?.shape && Object.prototype.hasOwnProperty.call(schema.shape, prop)) return true;
-      if (includeInternalKeys) {
-        // Allow direct checks for internal keys when opted-in
-        return publicToInternal.has(prop) || internalToPublic.has(prop);
-      }
-      return false;
-    },
-    ownKeys() {
-      const keys = new Set<string>();
-      for (const k of Object.keys(schema?.shape ?? {})) keys.add(k);
-      if (includeInternalKeys) {
-        for (const rule of aliases) keys.add(rule.internalKey);
-      }
-      return Array.from(keys);
-    },
-    getOwnPropertyDescriptor() {
-      return { enumerable: true, configurable: true } as PropertyDescriptor;
-    },
+    }
   });
+
+  return proxy as BindedVertex<T>;
 }

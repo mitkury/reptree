@@ -93,4 +93,12 @@ export class VertexState {
   removeTransientProperty(key: string): void {
     this.transientProperties = this.transientProperties.filter(p => p.key !== key);
   }
+
+  getTransientProperties(): ReadonlyArray<TreeVertexProperty> {
+    return this.transientProperties;
+  }
+
+  clearAllTransientProperties(): void {
+    this.transientProperties = [];
+  }
 }

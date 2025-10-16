@@ -256,6 +256,28 @@ export class RepTree {
     this.applyProperty(op);
   }
 
+  commitTransients(vertexId: string) {
+    const vertex = this.state.getVertex(vertexId);
+    if (!vertex) {
+      return;
+    }
+
+    const transientProps = vertex.getTransientProperties();
+    
+    // Promote each transient property to persistent
+    for (const prop of transientProps) {
+      this.setVertexProperty(vertexId, prop.key, prop.value);
+    }
+
+    // Clear transient OpIds tracking
+    for (const prop of transientProps) {
+      this.transientPropertiesAndTheirOpIds.delete(`${prop.key}@${vertexId}`);
+    }
+
+    // Clear all transient properties from the vertex
+    vertex.clearAllTransientProperties();
+  }
+
   setVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
     this.lamportClock++;
 
