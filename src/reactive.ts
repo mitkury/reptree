@@ -71,30 +71,6 @@ function buildAliasMaps(aliases: AliasRule[]) {
   return { publicToInternal, internalToPublic };
 }
 
-function toPublicObject(tree: RepTree, id: string, internalToPublic: Map<string, AliasRule>): Record<string, unknown> {
-  const obj: Record<string, unknown> = {};
-  for (const { key, value } of tree.getVertexProperties(id)) {
-    const rule = internalToPublic.get(key);
-    if (rule) {
-      const converted = rule.toPublic ? rule.toPublic(value as unknown) : (value as unknown);
-      obj[rule.publicKey] = converted;
-    } else {
-      obj[key] = value as unknown;
-    }
-  }
-  return obj;
-}
-
-// Reserved method names (string-based API for ergonomics)
-const RESERVED_METHOD_USE_TRANSIENT = 'useTransient';
-const RESERVED_METHOD_COMMIT_TRANSIENTS = 'commitTransients';
-
-// Vertex property names (prefixed with $ to avoid conflicts)
-const VERTEX_PROPS = ['$id', '$parentId', '$parent', '$children', '$childrenIds'] as const;
-
-// Vertex method names (prefixed with $ to avoid conflicts)
-const VERTEX_METHODS = ['$moveTo', '$delete', '$observe', '$observeChildren', '$newChild', '$newNamedChild'] as const;
-
 /**
  * Returns a live object that proxies reads/writes to a vertex.
  * - Reads reflect the latest CRDT state.
@@ -118,23 +94,22 @@ export function bindVertex<T extends Record<string, unknown>>(
   const includeInternalKeys = options.includeInternalKeys ?? false;
   const { publicToInternal, internalToPublic } = buildAliasMaps(aliases);
 
-
-  // Plain object with properties stored locally for Svelte's reactivity tracking
+  // =============================================================================
+  // SECTION 1: Setup base object and determine which properties to define
+  // =============================================================================
+  
   const obj: any = {};
   let isObserverUpdate = false;
 
-  // Define getters/setters for schema properties and aliases (only when schema exists)
+  // Determine which properties need getters/setters (schema properties + aliases)
   const propsToDefine = new Set<string>();
   if (schema?.shape) {
     Object.keys(schema.shape).forEach(key => propsToDefine.add(key));
-    // Also add aliases when schema exists
     aliases.forEach(alias => propsToDefine.add(alias.publicKey));
   }
 
-  // Storage for local values (Svelte tracks these!)
+  // Initialize local storage with values from CRDT
   const localValues = new Map<string, unknown>();
-
-  // Initialize local values from CRDT
   propsToDefine.forEach(publicKey => {
     const rule = publicToInternal.get(publicKey);
     const internalKey = rule?.internalKey ?? publicKey;
@@ -143,6 +118,10 @@ export function bindVertex<T extends Record<string, unknown>>(
     localValues.set(publicKey, publicValue);
   });
 
+  // =============================================================================
+  // SECTION 2: Define getters/setters for schema properties
+  // =============================================================================
+  
   propsToDefine.forEach(publicKey => {
     const rule = publicToInternal.get(publicKey);
     const storageKey = `_${publicKey}_value`; // Svelte-friendly storage key
@@ -165,20 +144,20 @@ export function bindVertex<T extends Record<string, unknown>>(
         return publicValue;
       },
       set: function(value: unknown) {
-        // Validate
-            if (schema?.shape && schema.shape[publicKey]) {
-              const field = schema.shape[publicKey]!;
-              if (field.safeParse) {
+        // Validate using schema
+        if (schema?.shape && schema.shape[publicKey]) {
+          const field = schema.shape[publicKey]!;
+          if (field.safeParse) {
             const res = field.safeParse(value);
             if (!res.success) throw new Error(`Invalid value for ${publicKey}`);
             value = (res as any).data;
           }
         }
         
-        // Update local value using 'this' (Svelte tracks this!)
+        // Update local storage (Svelte tracks this!)
         this[storageKey] = value;
         
-        // Sync to CRDT (unless this is from observer)
+        // Sync to CRDT (unless this is from observer to prevent infinite loop)
         if (!isObserverUpdate) {
           const internalKey = rule?.internalKey ?? publicKey;
           const internalValue = rule?.toInternal ? rule.toInternal(value) : value;
@@ -190,7 +169,10 @@ export function bindVertex<T extends Record<string, unknown>>(
     });
   });
 
-  // Define $ properties and methods
+  // =============================================================================
+  // SECTION 3: Define $ properties and methods (vertex API)
+  // =============================================================================
+  
   const cachedMethods = new Map<string, any>();
   const getCachedMethod = (name: string, factory: () => any) => {
     if (!cachedMethods.has(name)) {
@@ -328,7 +310,10 @@ export function bindVertex<T extends Record<string, unknown>>(
     }
   });
 
-  // Observer: sync CRDT changes to local values
+  // =============================================================================
+  // SECTION 4: Observer - sync CRDT updates to local storage
+  // =============================================================================
+  
   tree.observe(id, (events) => {
     isObserverUpdate = true;
     for (const e of events) {
@@ -348,13 +333,18 @@ export function bindVertex<T extends Record<string, unknown>>(
     isObserverUpdate = false;
   });
 
-  // For schema vertices: return plain object (Svelte-compatible!)
-  // They can't use `delete` operator but can set to undefined or use a helper
+  // =============================================================================
+  // SECTION 5: Return strategy - schema vs non-schema vertices
+  // =============================================================================
+  
+  // Schema vertices: return plain object for Svelte compatibility
+  // This allows Svelte's $state() and $derived() to work correctly
+  // Trade-off: delete operator doesn't work (use assignment to undefined instead)
   if (schema) {
     return obj as BindedVertex<T>;
   }
 
-  // For non-schema vertices: wrap in Proxy for dynamic properties
+  // Non-schema vertices: wrap in Proxy for dynamic property access
   const proxy = new Proxy(obj, {
     get(target, prop: string | symbol) {
       if (typeof prop !== 'string') {
