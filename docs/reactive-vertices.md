@@ -113,8 +113,7 @@ person.age = 34;     // ok, validated
 ```
 
 **How it works**:
-- Schema vertices return a plain object with getters/setters (optimized for Svelte compatibility)
-- Non-schema vertices return a Proxy for dynamic property access
+- Bound vertices are Proxies for dynamic property access
 - If a schema is provided, writes are validated using field-level validation via `schema.shape`
 
 ## Transient writes (drafts)
@@ -169,47 +168,10 @@ const child2 = root.newNamedChild('Folder', { name: 'ignored', flag: true });
 // Uses explicit name 'Folder'; props.name is ignored
 ```
 
-## Svelte 5 Integration
+## Integration Notes
 
-RepTree's bound vertices work seamlessly with Svelte 5's reactivity system, including `$state()` and `$derived()`.
-
-```ts
-<script lang="ts">
-  import { RepTree } from 'reptree';
-  import { z } from 'zod';
-
-  const tree = new RepTree('peer1');
-  const root = tree.createRoot();
-  const v = root.newChild();
-
-  const Person = z.object({ name: z.string(), age: z.number().int().min(0) });
-  
-  // Works directly with $state() - no wrapper needed!
-  let person = $state(v.bind(Person));
-  
-  // $derived works too!
-  let displayName = $derived(person.name ? `Name: ${person.name}` : 'No name');
-</script>
-
-<input bind:value={person.name} />
-<input type="number" bind:value={person.age} />
-<p>{displayName}</p>
-```
-
-As the user edits the inputs, the underlying vertex is updated and persisted. If CRDT updates arrive from other peers, the bound values reflect them on read.
-
-**Important**: Schema-based vertices (recommended) return a plain object optimized for Svelte's reactivity. This means:
-- ✅ Full `$state()` and `$derived()` support
-- ✅ All vertex methods (`$moveTo`, `$delete`, etc.) work
-- ⚠️ The `delete` operator doesn't sync to CRDT (use assignment to `undefined` instead)
-
-```ts
-// ❌ Don't use delete with schema vertices
-delete person.name;
-
-// ✅ Use assignment to undefined instead
-person.name = undefined;
-```
+- Bound vertices are framework-agnostic JavaScript objects (via Proxy)
+- Use your UI framework's preferred state mechanism to manage references to bound vertices
 
 ## Notes
 
