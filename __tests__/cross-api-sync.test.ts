@@ -15,26 +15,23 @@ describe('cross-API sync between Vertex and bound proxy', () => {
     const v = root.newChild();
 
     // Create two bound proxies pointing at the same vertex
-    const refA = bindVertex(tree, v.id);
-    const refB = bindVertex(tree, v.id);
+    const refA = bindVertex<{ score: number }>(tree, v.id);
+    const refB = bindVertex<{ score: number }>(tree, v.id);
 
     // 1) Write via Vertex API
     v.setProperty('score', 10);
 
     // Reads via bound proxies should reflect the value
-    const scoreA = refA['score' as keyof typeof refA] as unknown as number;
-    const scoreB = refB['score' as keyof typeof refB] as unknown as number;
-    expect(scoreA).toBe(10);
-    expect(scoreB).toBe(10);
+    expect(refA.score).toBe(10);
+    expect(refB.score).toBe(10);
 
     // 2) Write via a bound proxy
-    refA['score' as keyof typeof refA] = 42 as any;
+    refA.score = 42;
 
     // Vertex.getProperty should reflect the new value
     expect(v.getProperty('score')).toBe(42);
 
     // Other bound proxies also see the change
-    const scoreBAfter = refB['score' as keyof typeof refB] as unknown as number;
-    expect(scoreBAfter).toBe(42);
+    expect(refB.score).toBe(42);
   });
 });
