@@ -1,0 +1,437 @@
+
+> reptree@0.2.4 pretest
+> npm run build
+
+
+> reptree@0.2.4 prebuild
+> rm -rf dist
+
+
+> reptree@0.2.4 build
+> tsup
+
+CLI Building entry: src/index.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.4.0
+CLI Using tsup config: /workspace/tsup.config.ts
+CLI Target: es2020
+CLI Cleaning output folder
+CJS Build start
+ESM Build start
+ESM dist/index.js     51.78 KB
+ESM dist/index.js.map 111.43 KB
+ESM ⚡️ Build success in 19ms
+CJS dist/index.cjs     53.93 KB
+CJS dist/index.cjs.map 112.15 KB
+CJS ⚡️ Build success in 20ms
+DTS Build start
+DTS ⚡️ Build success in 844ms
+DTS dist/index.d.cts 15.70 KB
+DTS dist/index.d.ts  15.70 KB
+
+> reptree@0.2.4 test
+> vitest --run
+
+
+ RUN  v1.6.1 /workspace
+
+stdout | __tests__/structure-comparison.test.ts > RepTree Structure Comparison > simple tree duplicate should have identical structure
+Original tree structure:
+└── 63a592545e0f404a8ebf38b88a4e87e1
+    • _c: "2025-10-16T03:04:38.493Z"
+    • _n: "Project"
+    ├── 385e8aae012e47f795a40b9dc37b14da
+    │   • _c: "2025-10-16T03:04:38.494Z"
+    │   • _n: "Docs"
+    │   • type: "folder"
+    │   • icon: "folder-icon"
+    │   └── 0fa6dca34ebe4fa1826e9498319df675
+    │       • _c: "2025-10-16T03:04:38.494Z"
+    │       • _n: "README.md"
+    │       • type: "file"
+    │       • size: 2048
+    └── f989963567ec4961bf3b70c91ca80259
+        • _c: "2025-10-16T03:04:38.494Z"
+        • _n: "Images"
+        • type: "folder"
+        • icon: "image-icon"
+        └── 660d741500bc47debd619a18e91a8ec3
+            • _c: "2025-10-16T03:04:38.494Z"
+            • _n: "logo.png"
+            • type: "file"
+            • size: 15360
+            • format: "png"
+
+Duplicate tree structure:
+└── 63a592545e0f404a8ebf38b88a4e87e1
+    • _c: "2025-10-16T03:04:38.493Z"
+    • _n: "Project"
+    ├── 385e8aae012e47f795a40b9dc37b14da
+    │   • _c: "2025-10-16T03:04:38.494Z"
+    │   • _n: "Docs"
+    │   • type: "folder"
+    │   • icon: "folder-icon"
+    │   └── 0fa6dca34ebe4fa1826e9498319df675
+    │       • _c: "2025-10-16T03:04:38.494Z"
+    │       • _n: "README.md"
+    │       • type: "file"
+    │       • size: 2048
+    └── f989963567ec4961bf3b70c91ca80259
+        • _c: "2025-10-16T03:04:38.494Z"
+        • _n: "Images"
+        • type: "folder"
+        • icon: "image-icon"
+        └── 660d741500bc47debd619a18e91a8ec3
+            • _c: "2025-10-16T03:04:38.494Z"
+            • _n: "logo.png"
+            • type: "file"
+            • size: 15360
+            • format: "png"
+
+
+stdout | __tests__/structure-comparison.test.ts > RepTree Structure Comparison > duplicate with one additional operation should have different structure
+Original tree after:
+└── 2ea6eef95b5342f9829d560a3f3e6522
+    • _c: "2025-10-16T03:04:38.502Z"
+    • _n: "Project"
+    └── 5e4ddec0f0f042c4ba73d76d0fcd7401
+        • _c: "2025-10-16T03:04:38.502Z"
+        • _n: "Docs"
+
+Duplicate tree after:
+└── 2ea6eef95b5342f9829d560a3f3e6522
+    • _c: "2025-10-16T03:04:38.502Z"
+    • _n: "Project"
+    └── 5e4ddec0f0f042c4ba73d76d0fcd7401
+        • _c: "2025-10-16T03:04:38.502Z"
+        • _n: "Docs"
+        └── f85a58707b4e4985ad93265e8d3a957c
+            • _c: "2025-10-16T03:04:38.502Z"
+            • _n: "NewFile.md"
+
+
+stdout | __tests__/structure-comparison.test.ts > RepTree Structure Comparison > duplicate from quick fuzzy test should have identical structure
+🧪 Starting All-Ops Fuzzy Test (2 trees, 2 rounds, 50 actions per round)
+Round 1/2: Operations...
+Round 1/2: Sync (all-ops)...
+Round 2/2: Operations...
+Round 2/2: Sync (all-ops)...
+Original tree structure (fuzzy test):
+└── 2e02a581b9944a82ac7648faded6d8f9
+    • _c: "2025-10-16T03:04:38.503Z"
+    • prop_1: "value_93"
+    • prop_3: "value_54"
+    • prop_5: "value_16"
+    └── 72c92970431049fc8eff3e5a980869c3
+        • _c: "2025-10-16T03:04:38.504Z"
+        • prop_7: "value_27"
+        • prop_6: "value_59"
+        └── 07b7c4152fde480e88210d9c38885dec
+            • _c: "2025-10-16T03:04:38.504Z"
+            ├── 77a5a976a96a411eb80baf87150c1c07
+            │   • _c: "2025-10-16T03:04:38.504Z"
+            │   • prop_...
+Duplicate tree structure (fuzzy test):
+└── 2e02a581b9944a82ac7648faded6d8f9
+    • _c: "2025-10-16T03:04:38.503Z"
+    • prop_1: "value_93"
+    • prop_3: "value_54"
+    • prop_5: "value_16"
+    └── 72c92970431049fc8eff3e5a980869c3
+        • _c: "2025-10-16T03:04:38.504Z"
+        • prop_7: "value_27"
+        • prop_6: "value_59"
+        └── 07b7c4152fde480e88210d9c38885dec
+            • _c: "2025-10-16T03:04:38.504Z"
+            ├── 77a5a976a96a411eb80baf87150c1c07
+            │   • _c: "2025-10-16T03:04:38.504Z"
+            │   • prop_...
+
+stdout | __tests__/structure-comparison.test.ts > RepTree Structure Comparison > trees with different root IDs can never have identical structures
+
+===== INITIAL STATE =====
+
+--- Tree A ---
+Total vertices: 2
+Root ID: 2679f1e3d62049ba98eb4a76c94e5692
+- 2679f1e3d62049ba98eb4a76c94e5692: (unnamed) 
+-------------------
+
+
+--- Tree B ---
+Total vertices: 2
+Root ID: 0a2378490913452a85d9df33050dd090
+- 0a2378490913452a85d9df33050dd090: (unnamed) 
+-------------------
+
+
+===== AFTER OPERATIONS =====
+
+--- Tree A ---
+Total vertices: 3
+Root ID: 2679f1e3d62049ba98eb4a76c94e5692
+- 2679f1e3d62049ba98eb4a76c94e5692: Project 
+  - 8c596e9956d94e1ca541f1b5dbf3c8a0: Docs 
+-------------------
+
+
+--- Tree B ---
+Total vertices: 3
+Root ID: 0a2378490913452a85d9df33050dd090
+- 0a2378490913452a85d9df33050dd090: Project 
+  - 47222afc05904f5a80d234524c3b5924: Docs 
+-------------------
+
+
+Tree A string representation:
+└── 2679f1e3d62049ba98eb4a76c94e5692
+    • _c: "2025-10-16T03:04:38.529Z"
+    • _n: "Project"
+    └── 8c596e9956d94e1ca541f1b5dbf3c8a0
+        • _c: "2025-10-16T03:04:38.530Z"
+        • _n: "Docs"
+
+
+Tree B string representation:
+└── 0a2378490913452a85d9df33050dd090
+    • _c: "2025-10-16T03:04:38.529Z"
+    • _n: "Project"
+    └── 47222afc05904f5a80d234524c3b5924
+        • _c: "2025-10-16T03:04:38.530Z"
+        • _n: "Docs"
+
+
+Comparing structures:
+Tree A and B match: false
+
+===== MERGED TREE =====
+
+--- Merged Tree ---
+Total vertices: 5
+Root ID: 2679f1e3d62049ba98eb4a76c94e5692
+- 2679f1e3d62049ba98eb4a76c94e5692: Project 
+  - 8c596e9956d94e1ca541f1b5dbf3c8a0: Docs 
+-------------------
+
+
+Merged Tree string representation:
+└── 2679f1e3d62049ba98eb4a76c94e5692
+    • _c: "2025-10-16T03:04:38.529Z"
+    • _n: "Project"
+    └── 8c596e9956d94e1ca541f1b5dbf3c8a0
+        • _c: "2025-10-16T03:04:38.530Z"
+        • _n: "Docs"
+
+
+===== FINAL STATE =====
+
+--- Tree A after sync ---
+Total vertices: 5
+Root ID: 2679f1e3d62049ba98eb4a76c94e5692
+- 2679f1e3d62049ba98eb4a76c94e5692: Project 
+  - 8c596e9956d94e1ca541f1b5dbf3c8a0: Docs 
+-------------------
+
+
+--- Tree B after sync ---
+Total vertices: 5
+Root ID: 0a2378490913452a85d9df33050dd090
+- 0a2378490913452a85d9df33050dd090: Project 
+  - 47222afc05904f5a80d234524c3b5924: Docs 
+-------------------
+
+
+Final comparison:
+Tree A and merged tree match: true
+Tree B and merged tree match: false
+Tree A and Tree B match: false
+
+Final string comparison:
+Tree A:
+└── 2679f1e3d62049ba98eb4a76c94e5692
+    • _c: "2025-10-16T03:04:38.529Z"
+    • _n: "Project"
+    └── 8c596e9956d94e1ca541f1b5dbf3c8a0
+        • _c: "2025-10-16T03:04:38.530Z"
+        • _n: "Docs"
+
+Tree B:
+└── 0a2378490913452a85d9df33050dd090
+    • _c: "2025-10-16T03:04:38.529Z"
+    • _n: "Project"
+    └── 47222afc05904f5a80d234524c3b5924
+        • _c: "2025-10-16T03:04:38.530Z"
+        • _n: "Docs"
+
+Merged Tree:
+└── 2679f1e3d62049ba98eb4a76c94e5692
+    • _c: "2025-10-16T03:04:38.529Z"
+    • _n: "Project"
+    └── 8c596e9956d94e1ca541f1b5dbf3c8a0
+        • _c: "2025-10-16T03:04:38.530Z"
+        • _n: "Docs"
+
+
+NOTE: Trees starting with different root IDs will never have identical structures
+even after merging all operations, because the root vertices remain distinct.
+This is expected behavior for the current implementation.
+
+ ✓ __tests__/structure-comparison.test.ts  (4 tests) 41ms
+stdout | __tests__/yjs-properties.test.ts > Yjs Properties > Concurrent edits with Yjs CRDT properties
+Actual content after merge: 12345678910
+
+ ✓ __tests__/yjs-properties.test.ts  (13 tests) 26ms
+stderr | __tests__/reactive-wrapper.test.ts > bindVertex reactive wrapper > newChild props alias resolution and type filtering
+Some fields were skipped due to unsupported types: badObj, badArr
+
+stderr | __tests__/reactive-wrapper.test.ts > bindVertex reactive wrapper > newNamedChild ignores props.name in favor of explicit name and forbids nested children
+newNamedChild: "name" in props is ignored because a name argument was provided
+
+ ✓ __tests__/reactive-wrapper.test.ts  (9 tests) 15ms
+stdout | __tests__/state-vector-sync.test.ts > RepTree State Vector Synchronization > should synchronize correctly using state vectors
+Starting fuzzy test with state vectors...
+Round 1/5: Executing random operations...
+Round 1/5: Synchronizing with state vectors...
+Round 1/5: Verifying tree structures...
+Round 2/5: Executing random operations...
+Round 2/5: Synchronizing with state vectors...
+Round 2/5: Verifying tree structures...
+Round 3/5: Executing random operations...
+Round 3/5: Synchronizing with state vectors...
+Round 3/5: Verifying tree structures...
+Round 4/5: Executing random operations...
+Round 4/5: Synchronizing with state vectors...
+Round 4/5: Verifying tree structures...
+Round 5/5: Executing random operations...
+Round 5/5: Synchronizing with state vectors...
+Round 5/5: Verifying tree structures...
+Test complete with 7500 operations performed, resulting in 1932 vertices
+State Vector Sync Efficiency: 57.82%
+Operations created: 7500, transferred: 18982
+
+ ✓ __tests__/state-vector-sync.test.ts  (1 test) 13949ms
+ ✓ __tests__/basic-usage.test.ts  (1 test) 11ms
+ ✓ __tests__/cross-api-sync.test.ts  (1 test) 4ms
+ ✓ __tests__/lww-properties.test.ts  (3 tests) 4ms
+ ✓ __tests__/zod-integration.test.ts  (2 tests) 6ms
+ ✓ __tests__/same-tree-vertex-sync.test.ts  (1 test) 3ms
+stdout | __tests__/comparison.test.ts > RepTree Synchronization Methods Comparison > should compare efficiency of all-ops vs. state-vector sync
+🧪 Starting All-Ops Fuzzy Test (3 trees, 5 rounds, 500 actions per round)
+Round 1/5: Operations...
+Round 1/5: Sync (all-ops)...
+Round 2/5: Operations...
+Round 2/5: Sync (all-ops)...
+Round 3/5: Operations...
+Round 3/5: Sync (all-ops)...
+Round 4/5: Operations...
+Round 4/5: Sync (all-ops)...
+Round 5/5: Operations...
+Round 5/5: Sync (all-ops)...
+🧪 Starting Vector Fuzzy Test (3 trees, 5 rounds, 500 actions per round)
+Round 1/5: Operations...
+Round 1/5: Sync (vector-based)...
+Round 2/5: Operations...
+Round 2/5: Sync (vector-based)...
+Round 3/5: Operations...
+Round 3/5: Sync (vector-based)...
+Round 4/5: Operations...
+Round 4/5: Sync (vector-based)...
+Round 5/5: Operations...
+Round 5/5: Sync (vector-based)...
+
+📊 COMPARISON RESULTS:
+⏱️  EXECUTION TIME:
+  All-Ops:   19.27 seconds
+  Vector:    13.20 seconds
+  Savings:   31.46%
+
+🔄 OPERATIONS TRANSFERRED:
+  All-Ops:   150,166 ops
+  Vector:    18,994 ops
+  Savings:   87.35%
+
+📊 EFFICIENCY (unnecessary transfers avoided):
+  All-Ops:   0.00%
+  Vector:    66.28%
+
+Tree sizes: All-Ops: 1,891 vertices, Vector: 1,928 vertices
+
+ ✓ __tests__/comparison.test.ts  (1 test) 32485ms
+stdout | __tests__/fuzzy.test.ts > RepTree Fuzzy Testing > should synchronize correctly without state vectors
+Starting fuzzy test without state vectors...
+Initial memory: 15.31 MB
+Round 1/5: Executing random operations...
+Round 1/5: Synchronizing trees...
+Round 1/5: Verifying tree structures...
+Round 1 memory: 290.19 MB (total ops: 1871)
+Round 2/5: Executing random operations...
+Round 2/5: Synchronizing trees...
+Round 2/5: Verifying tree structures...
+Round 2 memory: 528.84 MB (total ops: 3731)
+Round 3/5: Executing random operations...
+Round 3/5: Synchronizing trees...
+Round 3/5: Verifying tree structures...
+Round 3 memory: 805.95 MB (total ops: 5591)
+Round 4/5: Executing random operations...
+Round 4/5: Synchronizing trees...
+Round 4/5: Verifying tree structures...
+Round 4 memory: 1097.51 MB (total ops: 7446)
+Round 5/5: Executing random operations...
+Round 5/5: Synchronizing trees...
+Round 5/5: Verifying tree structures...
+Round 5 memory: 1215.78 MB (total ops: 9331)
+Test complete with 7500 operations performed, resulting in 1829 vertices
+Final memory: 1216.12 MB
+
+stdout | __tests__/fuzzy.test.ts > RepTree Fuzzy Testing > causal dependency test: should handle out-of-order operations with shuffled merges
+Starting fuzzy test with shuffled operations...
+Round 1/5: Executing random operations...
+Round 1/5: Shuffling and synchronizing trees...
+Round 1/5: Verifying tree structures after shuffled sync...
+Round 2/5: Executing random operations...
+Round 2/5: Shuffling and synchronizing trees...
+Round 2/5: Verifying tree structures after shuffled sync...
+Round 3/5: Executing random operations...
+Round 3/5: Shuffling and synchronizing trees...
+Round 3/5: Verifying tree structures after shuffled sync...
+Round 4/5: Executing random operations...
+Round 4/5: Shuffling and synchronizing trees...
+Round 4/5: Verifying tree structures after shuffled sync...
+Round 5/5: Executing random operations...
+Round 5/5: Shuffling and synchronizing trees...
+Round 5/5: Verifying tree structures after shuffled sync...
+Test complete with 7500 operations performed, resulting in 1828 vertices
+
+stdout | __tests__/fuzzy.test.ts > RepTree Fuzzy Testing > should handle interleaved operations from different peers
+Starting fuzzy test with interleaved peer operations...
+Initial memory: 2891.29 MB
+Round 1/5: Executing random operations...
+Round 1/5: Interleaving operations between peers...
+Round 1/5: Verifying tree structures after interleaved sync...
+Round 1 memory: 2896.02 MB (total ops: 378)
+Round 2/5: Executing random operations...
+Round 2/5: Interleaving operations between peers...
+Round 2/5: Verifying tree structures after interleaved sync...
+Round 2 memory: 2899.37 MB (total ops: 756)
+Round 3/5: Executing random operations...
+Round 3/5: Interleaving operations between peers...
+Round 3/5: Verifying tree structures after interleaved sync...
+Round 3 memory: 2910.25 MB (total ops: 1145)
+Round 4/5: Executing random operations...
+Round 4/5: Interleaving operations between peers...
+Round 4/5: Verifying tree structures after interleaved sync...
+Round 4 memory: 2918.99 MB (total ops: 1512)
+Round 5/5: Executing random operations...
+Round 5/5: Interleaving operations between peers...
+Round 5/5: Verifying tree structures after interleaved sync...
+Round 5 memory: 2923.39 MB (total ops: 1881)
+Test complete with 1500 operations performed, resulting in 379 vertices
+Final memory: 2923.46 MB
+
+ ✓ __tests__/fuzzy.test.ts  (3 tests) 42691ms
+
+ Test Files  11 passed (11)
+      Tests  39 passed (39)
+   Start at  03:04:38
+   Duration  44.29s (transform 297ms, setup 0ms, collect 941ms, tests 89.23s, environment 1ms, prepare 919ms)
+
