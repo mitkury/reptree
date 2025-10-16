@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { RepTree, bindVertex } from '../dist/index.js';
+import { RepTree } from '../dist/index.js';
 
 /**
  * Ensures that two bound references to the same vertex within the same tree
@@ -11,8 +11,8 @@ describe('same-tree vertex reference sync', () => {
     const root = tree.createRoot();
     const v = tree.newVertex(root.id);
 
-    const personRef1 = bindVertex<{ age: number }>(tree, v.id);
-    const personRef2 = bindVertex<{ age: number }>(tree, v.id);
+    const personRef1 = v.bind<{ age: number }>();
+    const personRef2 = v.bind<{ age: number }>();
 
     // Write via the first reference
     personRef1.age = 33;

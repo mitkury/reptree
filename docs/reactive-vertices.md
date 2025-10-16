@@ -5,13 +5,13 @@ RepTree can expose a vertex as a live JavaScript object so you can read/write pr
 ## Binding a Vertex
 
 ```ts
-import { RepTree, bindVertex } from 'reptree';
+import { RepTree } from 'reptree';
 
 const tree = new RepTree('peer1');
 const root = tree.createRoot();
 const v = root.newChild();
 
-const person = bindVertex(tree, v.id);
+const person = v.bind();
 
 person.name = 'Alice'; // persisted to CRDT
 person.age = 33;       // persisted to CRDT
@@ -20,12 +20,55 @@ person.age = 33;       // persisted to CRDT
 console.log(person.name); // 'Alice'
 ```
 
+### Vertex properties and methods
+
+Bound vertices expose tree navigation and manipulation via `$`-prefixed properties and methods (following Vue.js convention):
+
+```ts
+const bound = v.bind();
+
+// Properties (read-only)
+bound.$id            // vertex ID
+bound.$parentId      // parent vertex ID or null
+bound.$parent        // parent Vertex instance or undefined
+bound.$children      // array of child Vertex instances
+bound.$childrenIds   // array of child IDs
+
+// Methods
+bound.$moveTo(parent)              // move to new parent (accepts Vertex, BindedVertex, or ID)
+bound.$delete()                    // delete vertex (moves to NULL parent)
+bound.$newChild(props)             // create child vertex
+bound.$newNamedChild(name, props)  // create named child vertex
+bound.$observe(listener)           // observe changes, returns unsubscribe function
+bound.$observeChildren(listener)   // observe children changes
+```
+
+Example usage:
+
+```ts
+const folderVertex = tree.getVertex(folderId);
+const folder = folderVertex.bind(FolderSchema);
+
+// Create and manipulate children
+const file = folder.$newNamedChild('README.md', { size: 1024 });
+file.$moveTo(otherFolder);
+
+// Observe changes (batched, ~33ms intervals)
+const unobserve = folder.$observeChildren(children => {
+  console.log('Children changed:', children.length);
+});
+
+// Later: unobserve()
+```
+
+All vertex properties and methods are read-only and cannot be overwritten.
+
 ### Public aliases for internal fields
 
 - name ↔ `_n`
 - createdAt ↔ `_c` (stored as ISO string; exposed as Date)
 
-These aliases are applied by default when using `bindVertex` or `vertex.bind()`.
+These aliases are applied by default when using `vertex.bind()`.
 
 ```ts
 person.name = 'Alice';              // writes _n = 'Alice'
@@ -50,15 +93,19 @@ const custom = v.bind({
 You can provide a [Zod v4](https://zod.dev/v4) schema to validate writes and optionally coerce values.
 
 ```ts
+import { RepTree } from 'reptree';
 import { z } from 'zod';
-import { bindVertex } from 'reptree';
+
+const tree = new RepTree('peer1');
+const root = tree.createRoot();
+const v = root.newChild();
 
 const Person = z.object({
   name: z.string(),
   age: z.number().int().min(0)
 });
 
-const person = bindVertex(tree, v.id, Person);
+const person = v.bind(Person);
 
 person.name = 'Bob'; // ok
 person.age = 34;     // ok, validated
@@ -76,7 +123,7 @@ RepTree supports transient (non‑persistent) overlays for quick UI drafts.
 - **commitTransients()**: promote current transient overlays to persistent values.
 
 ```ts
-const person = bindVertex(tree, v.id, Person);
+const person = v.bind(Person);
 
 // Draft changes (not yet persistent)
 person.useTransient(p => {
@@ -126,7 +173,7 @@ Svelte 5 can wrap the reactive object in a state:
 
 ```ts
 <script lang="ts">
-  import { RepTree, bindVertex } from 'reptree';
+  import { RepTree } from 'reptree';
   import { z } from 'zod';
 
   const tree = new RepTree('peer1');
@@ -134,7 +181,7 @@ Svelte 5 can wrap the reactive object in a state:
   const v = root.newChild();
 
   const Person = z.object({ name: z.string(), age: z.number().int().min(0) });
-  const person = bindVertex(tree, v.id, Person);
+  const person = v.bind(Person);
 
   const personState = $state(person);
 </script>

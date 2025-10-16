@@ -1,4 +1,5 @@
 import type { RepTree } from './RepTree';
+import type { Vertex } from './Vertex';
 
 export type FieldSchemaLike = {
   safeParse?: (input: unknown) => { success: true; data: unknown } | { success: false };
@@ -43,6 +44,21 @@ export type BindedVertex<T> = T & {
    * Promote transient properties to persistent.
    */
   commitTransients(): void;
+
+  /** Vertex properties (prefixed with $ to avoid conflicts) */
+  $id: string;
+  $parentId: string | null;
+  $parent: Vertex | undefined;
+  $children: Vertex[];
+  $childrenIds: string[];
+
+  /** Vertex methods (prefixed with $ to avoid conflicts) */
+  $moveTo(parent: Vertex | BindedVertex<any> | string): void;
+  $delete(): void;
+  $observe(listener: (events: any[]) => void): () => void;
+  $observeChildren(listener: (children: Vertex[]) => void): () => void;
+  $newChild(props?: Record<string, any> | object | null): Vertex;
+  $newNamedChild(name: string, props?: Record<string, any> | object | null): Vertex;
 };
 
 function buildAliasMaps(aliases: AliasRule[]) {
@@ -73,6 +89,12 @@ function toPublicObject(tree: RepTree, id: string, internalToPublic: Map<string,
 const RESERVED_METHOD_USE_TRANSIENT = 'useTransient';
 const RESERVED_METHOD_COMMIT_TRANSIENTS = 'commitTransients';
 
+// Vertex property names (prefixed with $ to avoid conflicts)
+const VERTEX_PROPS = ['$id', '$parentId', '$parent', '$children', '$childrenIds'] as const;
+
+// Vertex method names (prefixed with $ to avoid conflicts)
+const VERTEX_METHODS = ['$moveTo', '$delete', '$observe', '$observeChildren', '$newChild', '$newNamedChild'] as const;
+
 /**
  * Returns a live object that proxies reads/writes to a vertex.
  * - Reads reflect the latest CRDT state.
@@ -95,6 +117,9 @@ export function bindVertex<T extends Record<string, unknown>>(
   const aliases = options.aliases ?? defaultAliases;
   const includeInternalKeys = options.includeInternalKeys ?? false;
   const { publicToInternal, internalToPublic } = buildAliasMaps(aliases);
+
+  // Cache structural methods to maintain reference equality
+  const cachedMethods = new Map<string, any>();
 
   return new Proxy({} as BindedVertex<T>, {
     get(_target, prop: string | symbol) {
@@ -206,6 +231,72 @@ export function bindVertex<T extends Record<string, unknown>>(
         };
       }
 
+      // Handle vertex properties
+      if (typeof prop === 'string') {
+        if (prop === '$id') return id;
+        if (prop === '$parentId') return tree.getVertex(id)?.parentId ?? null;
+        if (prop === '$parent') {
+          const vertex = tree.getVertex(id);
+          return vertex?.parent;
+        }
+        if (prop === '$children') return tree.getChildren(id);
+        if (prop === '$childrenIds') return tree.getChildrenIds(id);
+
+        // Handle vertex methods (cached for reference equality)
+        if (prop === '$moveTo') {
+          if (!cachedMethods.has(prop)) {
+            cachedMethods.set(prop, (parent: any) => {
+              // parent can be Vertex or BindedVertex - extract ID
+              const parentId = typeof parent === 'object' && parent !== null ? (parent.id || parent.$id) : parent;
+              tree.moveVertex(id, parentId);
+            });
+          }
+          return cachedMethods.get(prop);
+        }
+        if (prop === '$delete') {
+          if (!cachedMethods.has(prop)) {
+            cachedMethods.set(prop, () => tree.deleteVertex(id));
+          }
+          return cachedMethods.get(prop);
+        }
+        if (prop === '$observe') {
+          if (!cachedMethods.has(prop)) {
+            cachedMethods.set(prop, (listener: (events: any[]) => void) => tree.observe(id, listener));
+          }
+          return cachedMethods.get(prop);
+        }
+        if (prop === '$observeChildren') {
+          if (!cachedMethods.has(prop)) {
+            cachedMethods.set(prop, (listener: (children: any[]) => void) => {
+              return tree.observe(id, (events: any[]) => {
+                if (events.some((e: any) => e.type === 'children')) {
+                  listener(tree.getChildren(id));
+                }
+              });
+            });
+          }
+          return cachedMethods.get(prop);
+        }
+        if (prop === '$newChild') {
+          if (!cachedMethods.has(prop)) {
+            cachedMethods.set(prop, (props?: Record<string, any> | object | null) => {
+              const vertex = tree.getVertex(id);
+              return vertex?.newChild(props);
+            });
+          }
+          return cachedMethods.get(prop);
+        }
+        if (prop === '$newNamedChild') {
+          if (!cachedMethods.has(prop)) {
+            cachedMethods.set(prop, (name: string, props?: Record<string, any> | object | null) => {
+              const vertex = tree.getVertex(id);
+              return vertex?.newNamedChild(name, props);
+            });
+          }
+          return cachedMethods.get(prop);
+        }
+      }
+
       if (typeof prop !== 'string') return undefined;
       const rule = publicToInternal.get(prop);
       if (rule) {
@@ -219,6 +310,14 @@ export function bindVertex<T extends Record<string, unknown>>(
       if (typeof prop !== 'string') return true;
       // Guard reserved method names from being persisted as properties
       if (prop === RESERVED_METHOD_USE_TRANSIENT || prop === RESERVED_METHOD_COMMIT_TRANSIENTS) {
+        return true;
+      }
+      // Guard vertex properties from being set
+      if (VERTEX_PROPS.includes(prop as any)) {
+        return true;
+      }
+      // Guard vertex methods from being set
+      if (VERTEX_METHODS.includes(prop as any)) {
         return true;
       }
 
@@ -257,6 +356,14 @@ export function bindVertex<T extends Record<string, unknown>>(
       if (typeof prop !== 'string') return true;
       // Guard reserved method names
       if (prop === RESERVED_METHOD_USE_TRANSIENT || prop === RESERVED_METHOD_COMMIT_TRANSIENTS) {
+        return true;
+      }
+      // Guard vertex properties
+      if (VERTEX_PROPS.includes(prop as any)) {
+        return true;
+      }
+      // Guard vertex methods
+      if (VERTEX_METHODS.includes(prop as any)) {
         return true;
       }
       const rule = publicToInternal.get(prop);

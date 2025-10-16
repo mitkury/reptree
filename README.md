@@ -26,7 +26,7 @@ npm install reptree
 ### Reactive vertex with Zod (optional)
 
 ```ts
-import { RepTree, bindVertex } from 'reptree';
+import { RepTree } from 'reptree';
 import { z } from 'zod';
 
 const tree = new RepTree('peer1');
@@ -35,11 +35,7 @@ const v = root.newChild();
 
 const Person = z.object({ name: z.string(), age: z.number().int().min(0) });
 
-// Helper function form
-const person = bindVertex(tree, v.id, Person);
-
-// Or via instance method on Vertex
-// const person = v.bind(Person);
+const person = v.bind(Person);
 
 person.name = 'Alice'; // validated and persisted
 person.age = 33;       // validated and persisted
@@ -50,7 +46,7 @@ person.age = 33;       // validated and persisted
 - `name` ↔ `_n`
 - `createdAt` ↔ `_c` (Date exposed, ISO stored)
 
-These aliases are applied by default when using `bindVertex` or `vertex.bind()`.
+These aliases are applied by default when using `vertex.bind()`.
 
 ```ts
 person.name = 'Alice';          // writes _n
