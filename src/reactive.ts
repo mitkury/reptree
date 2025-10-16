@@ -91,7 +91,6 @@ export function bindVertex<T extends Record<string, unknown>>(
   const options = (isOptions ? (schemaOrOptions as BindOptions<T>) : { schema: schemaOrOptions as SchemaLike<T> }) as BindOptions<T>;
   const schema = options.schema;
   const aliases = options.aliases ?? defaultAliases;
-  const includeInternalKeys = options.includeInternalKeys ?? false;
   const { publicToInternal, internalToPublic } = buildAliasMaps(aliases);
 
   // =============================================================================
