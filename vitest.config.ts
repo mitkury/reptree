@@ -14,5 +14,4 @@ export default defineConfig({
     },
     watch: false,
   },
-  // No special resolve needed without Svelte tests
 }); 
