@@ -34,13 +34,13 @@ describe('bindVertex reactive wrapper', () => {
 
     const person = bindVertex(tree, v.id, Person);
 
-    person.name = 'Alice' as any;
-    person.age = 33 as any;
+    person.name = 'Alice';
+    person.age = 33;
 
     expect(tree.getVertexProperty(v.id, '_n')).toBe('Alice');
     expect(tree.getVertexProperty(v.id, 'age')).toBe(33);
 
-    expect(() => (person.age = -1 as any)).toThrowError();
+    expect(() => (person.age = -1)).toThrowError();
   });
 
   test('Vertex.bind returns reactive object (no schema)', () => {
@@ -57,7 +57,7 @@ describe('bindVertex reactive wrapper', () => {
     expect(tree.getVertexProperty(v.id, 'age')).toBe(28);
 
     tree.setVertexProperty(v.id, '_n', 'Dave');
-    expect(person['name' as keyof typeof person]).toBe('Dave');
+    expect(person.name).toBe('Dave');
   });
 
   test('Vertex.bind validates writes with schema', () => {
@@ -173,9 +173,9 @@ describe('bindVertex reactive wrapper', () => {
 
     // Valid path
     const now = new Date('2025-01-02T00:00:00.000Z');
-    person.name = 'Gina' as any;
-    person.age = 44 as any;
-    person.createdAt = now as any;
+    person.name = 'Gina';
+    person.age = 44;
+    person.createdAt = now;
 
     expect(tree.getVertexProperty(v.id, '_n')).toBe('Gina');
     expect(tree.getVertexProperty(v.id, '_c')).toBe(now.toISOString());
@@ -407,33 +407,5 @@ describe('bindVertex reactive wrapper', () => {
 
     // Cleanup
     unobserve();
-  });
-
-  // NOTE: This test is disabled for non-schema vertices due to Proxy wrapper behavior
-  // Non-schema vertices use a Proxy for dynamic properties, which allows $ methods to be deleted
-  // This is a minor edge case protection issue that doesn't affect normal usage
-  // Schema vertices (the recommended approach) have proper protection via Object.defineProperty
-  test.skip('structural methods cannot be set or deleted', () => {
-    const tree = new RepTree('peer1');
-    const root = tree.createRoot();
-    const v = tree.newVertex(root.id);
-
-    const bound = bindVertex(tree, v.id);
-
-    // Try to overwrite methods
-    const originalMoveTo = bound.$moveTo;
-    (bound as any).$moveTo = () => {};
-    expect(bound.$moveTo).toBe(originalMoveTo);
-
-    const originalDelete = bound.$delete;
-    (bound as any).$delete = () => {};
-    expect(bound.$delete).toBe(originalDelete);
-
-    // Try to delete methods
-    delete (bound as any).$moveTo;
-    expect(bound.$moveTo).toBeDefined();
-
-    delete (bound as any).$observe;
-    expect(bound.$observe).toBeDefined();
   });
 });

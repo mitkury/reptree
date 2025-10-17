@@ -1,6 +1,6 @@
 # Reactive Vertices
 
-RepTree can expose a vertex as a live JavaScript object so you can read/write properties without thinking about CRDT plumbing. Reads reflect the latest CRDT state; writes persist via `setVertexProperty`.
+RepTree can expose a vertex as a live JavaScript object so you can read/write properties without thinking about CRDT plumbing.
 
 ## Binding a Vertex
 
