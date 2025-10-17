@@ -127,7 +127,7 @@ RepTree supports transient (non‑persistent) overlays for quick UI drafts.
 const person = v.bind(Person);
 
 // Draft changes (not yet persistent)
-person.$useTransient(p => {
+person.$useTransients(p => {
   p.name = 'Alice (draft)';   // transient overlay
   p.age = 34;                 // transient overlay
 });

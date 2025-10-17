@@ -51,7 +51,7 @@ export type BindedVertex<T> = T & {
    * Apply transient edits that override reads but do not persist yet.
    * @param fn 
    */
-  $useTransient(fn: (t: T) => void): void;
+  $useTransients(fn: (t: T) => void): void;
   
   /**
    * Promote current transient overlays to persistent values.
@@ -164,7 +164,7 @@ export function bindVertex<T extends Record<string, unknown>>(
     },
     $newChild: { value: (props?: Record<string, any> | object | null) => tree.getVertex(id)!.newChild(props), enumerable: false, configurable: true, writable: false },
     $newNamedChild: { value: (name: string, props?: Record<string, any> | object | null) => tree.getVertex(id)!.newNamedChild(name, props), enumerable: false, configurable: true, writable: false },
-    $useTransient: {
+    $useTransients: {
       value: function (fn: (t: any) => void) {
         const transientProxy = new Proxy({} as any, {
           set(_, prop: string | symbol, value: unknown) {

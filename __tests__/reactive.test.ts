@@ -110,12 +110,6 @@ describe('bindVertex reactive wrapper', () => {
     expect(name).toBe('Frank');
     expect(createdAt instanceof Date).toBe(true);
     expect(createdAt.toISOString()).toBe(now.toISOString());
-
-    // NOTE: Delete operator doesn't work with schema vertices (Svelte compatibility trade-off)
-    // Schema vertices return a plain object (not Proxy) to work with Svelte's $state()
-    // Workaround: Set to undefined instead: person.name = undefined
-    // delete (person as any).name;
-    // expect(tree.getVertexProperty(v.id, '_n')).toBeUndefined();
   });
 
   test('newChild props alias resolution and type filtering', () => {
@@ -196,7 +190,7 @@ describe('bindVertex reactive wrapper', () => {
 
     // Transient edits first
     const when = new Date('2025-01-03T00:00:00.000Z');
-    person.$useTransient(p => {
+    person.$useTransients(p => {
       p.name = 'Draft' as any;
       p.age = 25 as any;
       p.createdAt = when as any;
