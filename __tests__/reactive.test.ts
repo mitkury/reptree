@@ -34,13 +34,13 @@ describe('bindVertex reactive wrapper', () => {
 
     const person = bindVertex(tree, v.id, Person);
 
-    person.name = 'Alice' as any;
-    person.age = 33 as any;
+    person.name = 'Alice';
+    person.age = 33;
 
     expect(tree.getVertexProperty(v.id, '_n')).toBe('Alice');
     expect(tree.getVertexProperty(v.id, 'age')).toBe(33);
 
-    expect(() => (person.age = -1 as any)).toThrowError();
+    expect(() => (person.age = -1)).toThrowError();
   });
 
   test('Vertex.bind returns reactive object (no schema)', () => {
@@ -57,7 +57,7 @@ describe('bindVertex reactive wrapper', () => {
     expect(tree.getVertexProperty(v.id, 'age')).toBe(28);
 
     tree.setVertexProperty(v.id, '_n', 'Dave');
-    expect(person['name' as keyof typeof person]).toBe('Dave');
+    expect(person.name).toBe('Dave');
   });
 
   test('Vertex.bind validates writes with schema', () => {
@@ -110,12 +110,6 @@ describe('bindVertex reactive wrapper', () => {
     expect(name).toBe('Frank');
     expect(createdAt instanceof Date).toBe(true);
     expect(createdAt.toISOString()).toBe(now.toISOString());
-
-    // NOTE: Delete operator doesn't work with schema vertices (Svelte compatibility trade-off)
-    // Schema vertices return a plain object (not Proxy) to work with Svelte's $state()
-    // Workaround: Set to undefined instead: person.name = undefined
-    // delete (person as any).name;
-    // expect(tree.getVertexProperty(v.id, '_n')).toBeUndefined();
   });
 
   test('newChild props alias resolution and type filtering', () => {
@@ -173,9 +167,9 @@ describe('bindVertex reactive wrapper', () => {
 
     // Valid path
     const now = new Date('2025-01-02T00:00:00.000Z');
-    person.name = 'Gina' as any;
-    person.age = 44 as any;
-    person.createdAt = now as any;
+    person.name = 'Gina';
+    person.age = 44;
+    person.createdAt = now;
 
     expect(tree.getVertexProperty(v.id, '_n')).toBe('Gina');
     expect(tree.getVertexProperty(v.id, '_c')).toBe(now.toISOString());
@@ -196,7 +190,7 @@ describe('bindVertex reactive wrapper', () => {
 
     // Transient edits first
     const when = new Date('2025-01-03T00:00:00.000Z');
-    person.useTransient(p => {
+    person.$useTransients(p => {
       p.name = 'Draft' as any;
       p.age = 25 as any;
       p.createdAt = when as any;
@@ -214,7 +208,7 @@ describe('bindVertex reactive wrapper', () => {
     expect(tree.getVertexProperty(v.id, 'age', false)).toBeUndefined();
 
     // Promote transients -> persist them
-    person.commitTransients();
+    person.$commitTransients();
     expect(tree.getVertexProperty(v.id, '_n', false)).toBe('Draft');
     expect(tree.getVertexProperty(v.id, 'age', false)).toBe(25);
     // createdAt persisted as ISO
@@ -395,7 +389,7 @@ describe('bindVertex reactive wrapper', () => {
     // Add children
     const child1 = tree.newVertex(parent.id);
     const child2 = tree.newVertex(parent.id);
-    
+
     // Wait for batched events to process (~33ms)
     await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -409,31 +403,32 @@ describe('bindVertex reactive wrapper', () => {
     unobserve();
   });
 
-  // NOTE: This test is disabled for non-schema vertices due to Proxy wrapper behavior
-  // Non-schema vertices use a Proxy for dynamic properties, which allows $ methods to be deleted
-  // This is a minor edge case protection issue that doesn't affect normal usage
-  // Schema vertices (the recommended approach) have proper protection via Object.defineProperty
-  test.skip('structural methods cannot be set or deleted', () => {
+  test('sync between Vertex and bound proxy', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const v = tree.newVertex(root.id);
 
-    const bound = bindVertex(tree, v.id);
+    // Create a child vertex normally (non-bound)
+    const v = root.newChild();
 
-    // Try to overwrite methods
-    const originalMoveTo = bound.$moveTo;
-    (bound as any).$moveTo = () => {};
-    expect(bound.$moveTo).toBe(originalMoveTo);
+    // Create two bound proxies pointing at the same vertex
+    const refA = bindVertex<{ score: number }>(tree, v.id);
+    const refB = bindVertex<{ score: number }>(tree, v.id);
 
-    const originalDelete = bound.$delete;
-    (bound as any).$delete = () => {};
-    expect(bound.$delete).toBe(originalDelete);
+    // 1) Write via Vertex API
+    v.setProperty('score', 10);
 
-    // Try to delete methods
-    delete (bound as any).$moveTo;
-    expect(bound.$moveTo).toBeDefined();
+    // Reads via bound proxies should reflect the value
+    expect(refA.score).toBe(10);
+    expect(refB.score).toBe(10);
 
-    delete (bound as any).$observe;
-    expect(bound.$observe).toBeDefined();
+    // 2) Write via a bound proxy
+    refA.score = 42;
+
+    // Vertex.getProperty should reflect the new value
+    expect(v.getProperty('score')).toBe(42);
+
+    // Other bound proxies also see the change
+    expect(refB.score).toBe(42);
   });
+
 });
