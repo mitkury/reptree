@@ -51,8 +51,8 @@ export type BindedVertex<T> = T & {
   $delete(): void;
   $observe(listener: (events: any[]) => void): () => void;
   $observeChildren(listener: (children: Vertex[]) => void): () => void;
-  $newChild(props?: Record<string, any> | object | null): Vertex | undefined;
-  $newNamedChild(name: string, props?: Record<string, any> | object | null): Vertex | undefined;
+  $newChild(props?: Record<string, any> | object | null): Vertex;
+  $newNamedChild(name: string, props?: Record<string, any> | object | null): Vertex;
 };
 
 function buildAliasMaps(aliases: AliasRule[]) {
@@ -120,8 +120,8 @@ export function bindVertex<T extends Record<string, unknown>>(
       configurable: true,
       writable: false,
     },
-    $newChild: { value: (props?: Record<string, any> | object | null) => tree.getVertex(id)?.newChild(props), enumerable: false, configurable: true, writable: false },
-    $newNamedChild: { value: (name: string, props?: Record<string, any> | object | null) => tree.getVertex(id)?.newNamedChild(name, props), enumerable: false, configurable: true, writable: false },
+    $newChild: { value: (props?: Record<string, any> | object | null) => tree.getVertex(id)!.newChild(props), enumerable: false, configurable: true, writable: false },
+    $newNamedChild: { value: (name: string, props?: Record<string, any> | object | null) => tree.getVertex(id)!.newNamedChild(name, props), enumerable: false, configurable: true, writable: false },
     useTransient: {
       value: function (fn: (t: any) => void) {
         const transientProxy = new Proxy({} as any, {
