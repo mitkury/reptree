@@ -34,24 +34,65 @@ export type BindOptions<T> = {
   includeInternalKeys?: boolean;
 };
 
+/**
+ * A bound vertex object that forwards reads/writes to a vertex.
+ * @param T - The type of the vertex.
+ */
 export type BindedVertex<T> = T & {
-  // Transient overlay helpers
-  useTransient(fn: (t: T) => void): void;
-  commitTransients(): void;
 
-  // Structural properties
+  $vertex: Vertex;
   $id: string;
   $parentId: string | null;
   $parent: Vertex | undefined;
   $children: Vertex[];
   $childrenIds: string[];
 
-  // Structural methods
+  /**
+   * Apply transient edits that override reads but do not persist yet.
+   * @param fn 
+   */
+  $useTransient(fn: (t: T) => void): void;
+  
+  /**
+   * Promote current transient overlays to persistent values.
+   */
+  $commitTransients(): void;
+  
+  /**
+   * Move the vertex to a new parent.
+   * @param parent - The new parent vertex or ID.
+   */
   $moveTo(parent: Vertex | BindedVertex<any> | string): void;
+  
+  /**
+   * Delete the vertex.
+   */
   $delete(): void;
+  
+  /**
+   * Observe changes to the vertex.
+   * @param listener - The listener function to call when changes occur.
+   */
   $observe(listener: (events: any[]) => void): () => void;
+  
+  /**
+   * Observe changes to the children of the vertex.
+   * @param listener - The listener function to call when children change.
+   */
   $observeChildren(listener: (children: Vertex[]) => void): () => void;
+  
+  /**
+   * Create a new child vertex.
+   * @param props - The properties to set on the new child vertex.
+   */
+  
   $newChild(props?: Record<string, any> | object | null): Vertex;
+  
+  /**
+   * Create a new named child vertex.
+   * @param name - The name of the new child vertex.
+   * @param props - The properties to set on the new child vertex.
+   */
   $newNamedChild(name: string, props?: Record<string, any> | object | null): Vertex;
 };
 
@@ -93,6 +134,7 @@ export function bindVertex<T extends Record<string, unknown>>(
   const obj: any = {};
 
   Object.defineProperties(obj, {
+    $vertex: { get: () => tree.getVertex(id)!, enumerable: false, configurable: true },
     $id: { get: () => id, enumerable: false, configurable: true },
     $parentId: { get: () => tree.getVertex(id)?.parentId ?? null, enumerable: false, configurable: true },
     $parent: { get: () => tree.getVertex(id)?.parent, enumerable: false, configurable: true },
@@ -122,7 +164,7 @@ export function bindVertex<T extends Record<string, unknown>>(
     },
     $newChild: { value: (props?: Record<string, any> | object | null) => tree.getVertex(id)!.newChild(props), enumerable: false, configurable: true, writable: false },
     $newNamedChild: { value: (name: string, props?: Record<string, any> | object | null) => tree.getVertex(id)!.newNamedChild(name, props), enumerable: false, configurable: true, writable: false },
-    useTransient: {
+    $useTransient: {
       value: function (fn: (t: any) => void) {
         const transientProxy = new Proxy({} as any, {
           set(_, prop: string | symbol, value: unknown) {
@@ -148,7 +190,7 @@ export function bindVertex<T extends Record<string, unknown>>(
       configurable: true,
       writable: false,
     },
-    commitTransients: { value: () => tree.commitTransients(id), enumerable: false, configurable: true, writable: false },
+    $commitTransients: { value: () => tree.commitTransients(id), enumerable: false, configurable: true, writable: false },
     equals: {
       value: function (other: any) {
         if (other && typeof other === 'object' && '$id' in other) {

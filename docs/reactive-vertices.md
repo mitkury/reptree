@@ -127,7 +127,7 @@ RepTree supports transient (non‑persistent) overlays for quick UI drafts.
 const person = v.bind(Person);
 
 // Draft changes (not yet persistent)
-person.useTransient(p => {
+person.$useTransient(p => {
   p.name = 'Alice (draft)';   // transient overlay
   p.age = 34;                 // transient overlay
 });
@@ -135,7 +135,7 @@ person.useTransient(p => {
 console.log(person.name); // 'Alice (draft)' — reads include transients
 
 // Promote all transient overlays to persistent CRDT properties
-person.commitTransients();
+person.$commitTransients();
 
 // Now reads reflect the persisted values even without the overlay
 console.log(person.name); // 'Alice (draft)'
