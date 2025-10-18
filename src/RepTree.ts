@@ -15,7 +15,6 @@ import { type OpId, compareOpId, equalsOpId, isOpIdGreaterThan, opIdToString } f
 import uuid from "./uuid";
 import { Vertex } from './Vertex';
 import { StateVector } from './StateVector';
-// LWW primitives are supported
 
 type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
 
@@ -177,6 +176,12 @@ export class RepTree {
     return ops;
   }
 
+  /**
+   * This is the first vertex that will contain all other vertices.
+   * If you plan to replicate a tree then don't use this method and instead merge
+   * in the ops from another tree (that will also contain the root vertex).
+   * @returns The root vertex
+   */
   createRoot(): Vertex {
     if (this.rootVertexId) {
       throw new Error('Root vertex already exists');
@@ -191,6 +196,7 @@ export class RepTree {
 
     return new Vertex(this, rootVertex);
   }
+
   newVertex(parentId: string, props: Record<string, VertexPropertyType> | object | null = null): Vertex {
     const typedProps = props as Record<string, VertexPropertyType> | null;
     const vertexId = this.newVertexInternalWithUUID(parentId);
@@ -238,6 +244,11 @@ export class RepTree {
     this.applyProperty(op);
   }
 
+  /**
+   * Promotes all transient (temporary) properties to persistent properties.
+   * @param vertexId - The ID of the vertex to commit transients for.
+   * @returns 
+   */
   commitTransients(vertexId: string) {
     const vertex = this.state.getVertex(vertexId);
     if (!vertex) {
@@ -637,8 +648,6 @@ export class RepTree {
     this.reportOpAsApplied(op);
   }
 
-  // Non-LWW observer setup removed
-
   private applyProperty(op: SetVertexProperty) {
     const targetVertex = this.state.getVertex(op.targetId);
     if (!targetVertex) {
@@ -658,7 +667,6 @@ export class RepTree {
 
     this.updateLamportClock(op);
 
-    // Only LWW properties are supported
     this.applyLLWProperty(op, targetVertex);
   }
 
