@@ -25,14 +25,6 @@ export function isAnyPropertyOp(op: VertexOperation): op is SetVertexProperty {
   return 'key' in op;
 }
 
-export function isLWWPropertyOp(op: VertexOperation): op is SetVertexProperty {
-  return 'key' in op && 'value' in op && (!op.value || typeof op.value !== 'object' || !('type' in op.value));
-}
-
-export function isModifyPropertyOp(op: VertexOperation): op is SetVertexProperty {
-  return 'key' in op && 'value' in op && typeof op.value === 'object' && op.value !== null && 'type' in op.value;
-}
-
 export function newMoveVertexOp(clock: number, peerId: string, targetId: string, parentId: string | null): MoveVertex {
   return { id: createOpId(clock, peerId), targetId, parentId };
 }

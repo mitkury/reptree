@@ -16,7 +16,7 @@ const person = v.bind();
 person.name = 'Alice'; // persisted to CRDT
 person.age = 33;       // persisted to CRDT
 
-// If CRDT updates elsewhere, reads reflect the latest state
+// If updates arrive from other peers, reads reflect the latest state
 console.log(person.name); // 'Alice'
 ```
 
@@ -152,7 +152,7 @@ Notes:
 `vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:
 
 - Map `name` → `_n`, and `createdAt` (Date) → `_c` (ISO string)
-- Filter unsupported types (non-primitive objects except Y.Doc)
+- Filter unsupported types (non-primitive objects)
 - Ignore `props.name` if `newNamedChild` receives an explicit `name` argument
 - Forbid nested children in props for now
 
@@ -177,4 +177,4 @@ const child2 = root.newNamedChild('Folder', { name: 'ignored', flag: true });
 
 - This is opt-in; core remains free of a hard Zod dependency. The helper accepts any schema-like with `safeParse` and optional `shape`.
 - For snapshot validation instead of a live object, use `tree.parseVertex(id, schema)`.
-- Yjs documents are supported as vertex properties; you can bind them separately using Yjs APIs.
+- Yjs integration is not included in this branch. See `docs/yjs.md` and the `yjs-2025` branch for details.

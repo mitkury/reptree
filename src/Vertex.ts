@@ -1,7 +1,6 @@
 import type { VertexState } from "./VertexState";
 import type { RepTree } from "./RepTree";
 import { bindVertex, type SchemaLike, type BindOptions, type BindedVertex } from './reactive';
-import * as Y from 'yjs';
 import type { VertexChangeEvent, VertexPropertyType } from "./treeTypes";
 
 /**
@@ -234,11 +233,9 @@ export class Vertex {
           continue;
         }
       } else if (typeof value === 'object' && value !== null) {
-        if (!(value instanceof Y.Doc)) {
-          // Unsupported nested object
-          skipped.push(rawKey);
-          continue;
-        }
+        // Unsupported nested object
+        skipped.push(rawKey);
+        continue;
       } else if (!isPrimitive(value)) {
         skipped.push(rawKey);
         continue;

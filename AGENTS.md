@@ -15,7 +15,7 @@ A tree data structure using CRDTs for seamless replication between peers.
 RepTree uses multiple conflict-free replicated data types (CRDTs) to manage seamless replication between peers:
 - A move tree CRDT is used for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
 - A last writer wins (LWW) CRDT is used for properties.
-- Yjs integration for collaborative editing with various shared data types (Text, Array, Map, XML).
+Note: Yjs integration was removed in this branch to keep the core lightweight. See `docs/yjs.md`.
 
 RepTree can also be viewed as a hierarchical, distributed database. For more details on its database capabilities, see [RepTree as a Database](docs/database.md).
 
@@ -30,7 +30,7 @@ npm install reptree
 ### Reactive vertex with Zod (optional)
 
 ```ts
-import { RepTree, bindVertex } from 'reptree';
+import { RepTree } from 'reptree';
 import { z } from 'zod';
 
 const tree = new RepTree('peer1');
@@ -39,11 +39,7 @@ const v = root.newChild();
 
 const Person = z.object({ name: z.string(), age: z.number().int().min(0) });
 
-// Helper function form
-const person = bindVertex(tree, v.id, Person);
-
-// Or via instance method on Vertex
-// const person = v.bind(Person);
+const person = v.bind(Person);
 
 person.name = 'Alice'; // validated and persisted
 person.age = 33;       // validated and persisted
@@ -54,7 +50,7 @@ person.age = 33;       // validated and persisted
 - `name` ↔ `_n`
 - `createdAt` ↔ `_c` (Date exposed, ISO stored)
 
-These aliases are applied by default when using `bindVertex` or `vertex.bind()`.
+These aliases are applied by default when using `vertex.bind()`.
 
 ```ts
 person.name = 'Alice';          // writes _n
@@ -120,54 +116,12 @@ otherTree.merge(ops);
 `vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:
 
 - Map `name` → `_n`, `createdAt` (Date) → `_c` (ISO)
-- Filter unsupported types (non-primitive objects except Y.Doc)
+- Filter unsupported types (non-primitive objects)
 - Ignore `props.name` if `newNamedChild` has an explicit `name`
 - Forbid nested children in props for now
+## Yjs
 
-## Yjs Integration
-
-RepTree supports [Yjs](https://github.com/yjs/yjs) documents as vertex properties, enabling real-time collaborative editing with a variety of shared data types:
-
-```typescript
-import { RepTree } from 'reptree';
-import * as Y from 'yjs';
-
-// Create a tree with a root vertex
-const tree = new RepTree('peer1');
-const root = tree.createRoot();
-
-// Create a Yjs document
-const ydoc = new Y.Doc();
-const ytext = ydoc.getText('default');
-ytext.insert(0, 'Hello world');
-
-// Set the Yjs document as a property
-root.setProperty('content', ydoc);
-
-// Later, retrieve and modify the document
-const retrievedDoc = root.getProperty('content') as Y.Doc;
-retrievedDoc.getText('default').insert(retrievedDoc.getText('default').length, '!');
-
-// Sync operations with another tree
-const tree2 = new RepTree('peer2');
-tree2.merge(tree.popLocalOps());
-
-// Both trees now have the same Yjs document content
-const root2 = tree2.root;
-const doc2 = root2.getProperty('content') as Y.Doc;
-console.log(doc2.getText('default').toString()); // 'Hello world!'
-```
-
-This integration allows for:
-- Collaborative editing with multiple shared data types:
-  - **Y.Text** - For rich text editing with formatting attributes
-  - **Y.Array** - For ordered collections of data
-  - **Y.Map** - For key-value pairs and structured data
-  - **Y.XmlFragment/Y.XmlElement** - For XML-like structured content
-- Complex nested data structures (arrays within maps, maps within arrays, etc.)
-- Automatic CRDT synchronization between peers
-- Conflict-free concurrent editing
-- Integration with existing Yjs ecosystem (editors, frameworks, etc.)
+We previously supported Yjs in this repository, but it has been removed to keep the core library lightweight. If you need Yjs integration, see `docs/yjs.md` and the `yjs-2025` branch.
 
 ## License
 
@@ -209,7 +163,7 @@ bench - anything related to benchmarks
 
 {
   "name": "reptree",
-  "version": "0.2.3",
+  "version": "0.4.0",
   "description": "A tree data structure using CRDTs for seamless replication between peers",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -252,15 +206,16 @@ bench - anything related to benchmarks
     "url": "https://github.com/mitkury/reptree/issues"
   },
   "devDependencies": {
+    "airul": "^0.1.39",
+    "jsdom": "^27.0.0",
     "ts-node": "^10.9.1",
     "tsup": "^8.0.1",
     "typescript": "^5.2.2",
     "vitest": "^1.0.0",
-    "zod": "^4.0.0",
-    "airul": "^0.1.39"
+    "zod": "^4.0.0"
   },
   "dependencies": {
-    "yjs": "^13.6.26"
+    
   }
 }
 ---
@@ -343,32 +298,75 @@ The state vector functionality in RepTree:
 
 # Reactive Vertices
 
-RepTree can expose a vertex as a live JavaScript object so you can read/write properties without thinking about CRDT plumbing. Reads reflect the latest CRDT state; writes persist via `setVertexProperty`.
+RepTree can expose a vertex as a live JavaScript object so you can read/write properties without thinking about CRDT plumbing.
 
 ## Binding a Vertex
 
 ```ts
-import { RepTree, bindVertex } from 'reptree';
+import { RepTree } from 'reptree';
 
 const tree = new RepTree('peer1');
 const root = tree.createRoot();
 const v = root.newChild();
 
-const person = bindVertex(tree, v.id);
+const person = v.bind();
 
 person.name = 'Alice'; // persisted to CRDT
 person.age = 33;       // persisted to CRDT
 
-// If CRDT updates elsewhere, reads reflect the latest state
+// If updates arrive from other peers, reads reflect the latest state
 console.log(person.name); // 'Alice'
 ```
+
+### Vertex properties and methods
+
+Bound vertices expose tree navigation and manipulation via `$`-prefixed properties and methods (following Vue.js convention):
+
+```ts
+const bound = v.bind();
+
+// Properties (read-only)
+bound.$id            // vertex ID
+bound.$parentId      // parent vertex ID or null
+bound.$parent        // parent Vertex instance or undefined
+bound.$children      // array of child Vertex instances
+bound.$childrenIds   // array of child IDs
+
+// Methods
+bound.$moveTo(parent)              // move to new parent (accepts Vertex, BindedVertex, or ID)
+bound.$delete()                    // delete vertex (moves to NULL parent)
+bound.$newChild(props)             // create child vertex
+bound.$newNamedChild(name, props)  // create named child vertex
+bound.$observe(listener)           // observe changes, returns unsubscribe function
+bound.$observeChildren(listener)   // observe children changes
+```
+
+Example usage:
+
+```ts
+const folderVertex = tree.getVertex(folderId);
+const folder = folderVertex.bind(FolderSchema);
+
+// Create and manipulate children
+const file = folder.$newNamedChild('README.md', { size: 1024 });
+file.$moveTo(otherFolder);
+
+// Observe changes (batched, ~33ms intervals)
+const unobserve = folder.$observeChildren(children => {
+  console.log('Children changed:', children.length);
+});
+
+// Later: unobserve()
+```
+
+All vertex properties and methods are read-only and cannot be overwritten.
 
 ### Public aliases for internal fields
 
 - name ↔ `_n`
 - createdAt ↔ `_c` (stored as ISO string; exposed as Date)
 
-These aliases are applied by default when using `bindVertex` or `vertex.bind()`.
+These aliases are applied by default when using `vertex.bind()`.
 
 ```ts
 person.name = 'Alice';              // writes _n = 'Alice'
@@ -393,23 +391,28 @@ const custom = v.bind({
 You can provide a [Zod v4](https://zod.dev/v4) schema to validate writes and optionally coerce values.
 
 ```ts
+import { RepTree } from 'reptree';
 import { z } from 'zod';
-import { bindVertex } from 'reptree';
+
+const tree = new RepTree('peer1');
+const root = tree.createRoot();
+const v = root.newChild();
 
 const Person = z.object({
   name: z.string(),
   age: z.number().int().min(0)
 });
 
-const person = bindVertex(tree, v.id, Person);
+const person = v.bind(Person);
 
 person.name = 'Bob'; // ok
 person.age = 34;     // ok, validated
 // person.age = -1;  // throws
 ```
 
-- The returned object is a Proxy that forwards reads/writes to the vertex.
-- If a schema is provided, it validates writes. Field-level validation is used when available via `schema.shape`, otherwise a safe whole-object validation is attempted.
+**How it works**:
+- Bound vertices are Proxies for dynamic property access
+- If a schema is provided, writes are validated using field-level validation via `schema.shape`
 
 ## Transient writes (drafts)
 
@@ -419,10 +422,10 @@ RepTree supports transient (non‑persistent) overlays for quick UI drafts.
 - **commitTransients()**: promote current transient overlays to persistent values.
 
 ```ts
-const person = bindVertex(tree, v.id, Person);
+const person = v.bind(Person);
 
 // Draft changes (not yet persistent)
-person.useTransient(p => {
+person.$useTransients(p => {
   p.name = 'Alice (draft)';   // transient overlay
   p.age = 34;                 // transient overlay
 });
@@ -430,7 +433,7 @@ person.useTransient(p => {
 console.log(person.name); // 'Alice (draft)' — reads include transients
 
 // Promote all transient overlays to persistent CRDT properties
-person.commitTransients();
+person.$commitTransients();
 
 // Now reads reflect the persisted values even without the overlay
 console.log(person.name); // 'Alice (draft)'
@@ -447,7 +450,7 @@ Notes:
 `vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:
 
 - Map `name` → `_n`, and `createdAt` (Date) → `_c` (ISO string)
-- Filter unsupported types (non-primitive objects except Y.Doc)
+- Filter unsupported types (non-primitive objects)
 - Ignore `props.name` if `newNamedChild` receives an explicit `name` argument
 - Forbid nested children in props for now
 
@@ -463,33 +466,13 @@ const child2 = root.newNamedChild('Folder', { name: 'ignored', flag: true });
 // Uses explicit name 'Folder'; props.name is ignored
 ```
 
-## Svelte 5 Integration
+## Integration Notes
 
-Svelte 5 can wrap the reactive object in a state:
-
-```ts
-<script lang="ts">
-  import { RepTree, bindVertex } from 'reptree';
-  import { z } from 'zod';
-
-  const tree = new RepTree('peer1');
-  const root = tree.createRoot();
-  const v = root.newChild();
-
-  const Person = z.object({ name: z.string(), age: z.number().int().min(0) });
-  const person = bindVertex(tree, v.id, Person);
-
-  const personState = $state(person);
-</script>
-
-<input bind:value={personState.name} />
-<input type="number" bind:value={personState.age} />
-```
-
-As the user edits the inputs, the underlying vertex is updated and persisted. If CRDT updates arrive from other peers, the bound values reflect them on read.
+- Bound vertices are framework-agnostic JavaScript objects (via Proxy)
+- Use your UI framework's preferred state mechanism to manage references to bound vertices
 
 ## Notes
 
 - This is opt-in; core remains free of a hard Zod dependency. The helper accepts any schema-like with `safeParse` and optional `shape`.
 - For snapshot validation instead of a live object, use `tree.parseVertex(id, schema)`.
-- Yjs documents are supported as vertex properties; you can bind them separately using Yjs APIs.
+- Yjs integration is not included in this branch. See `docs/yjs.md` and the `yjs-2025` branch for details.
