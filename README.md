@@ -1,98 +1,95 @@
 # RepTree
 
-A tree data structure using CRDTs for seamless replication between peers.
+A JavaScript tree data structure for storing and syncing app state. It can be used both to represent and persist the state in the frontend and backend.
 
-> 🚧 **Work in Progress**: This package is under active development and APIs may change.
->
-> RepTree was created for the [Supa](https://github.com/supaorg/supa) project, an open-source alternative to ChatGPT.
+RepTree uses [CRDTs](https://crdt.tech/) for seamless replication between users.
 
-## Description
+> RepTree was created for the [Sila](https://github.com/silaorg/sila) project, an open-source alternative to ChatGPT.
 
-RepTree uses multiple conflict-free replicated data types (CRDTs) to manage seamless replication between peers:
-- A move tree CRDT is used for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
-- A last writer wins (LWW) CRDT is used for properties.
-Note: Yjs integration was removed in this branch to keep the core lightweight. See `docs/yjs.md`.
+## What it solves
 
-RepTree can also be viewed as a hierarchical, distributed database. For more details on its database capabilities, see [RepTree as a Database](docs/database.md).
+If you have a tree structure in your app where each node/vertex/leaf can be moved independently by multiple users, you would need to have a solution that solved potential conflicts where users try to move the same vertex in different ways. Otherwise your tree state will diverge or get loops. So that is any folder structure (people creating and moving folders around), 2D/3D scenes with objects being moved around and getting parented, a Notion-like document with blocks with texts and other properties being edited by users.
 
-## Installation
+## Getting Started
 
 ```bash
 npm install reptree
 ```
 
-## Usage
-
-### Reactive vertex with Zod (optional)
-
+### Example 1 
 ```ts
-import { RepTree } from 'reptree';
-import { z } from 'zod';
+import { RepTree } from "reptree";
 
-const tree = new RepTree('peer1');
-const root = tree.createRoot();
-const v = root.newChild();
+// Create a tree with a root
+const tree = new RepTree("company-org-1");
+const company = tree.createRoot();
 
+// Create a node (we call them vertices in RepTree) in the root of our new tree
+const devs = company.newNamedChild("developers");
+const qa = company.newNamedChild("qa");
+
+// Create a vertex in another vertex
+const alice = qa.newChild();
+
+// Set properties
+alice.setProperty("name", "Alice");
+alice.setProperty("age", 32);
+
+// Move the vertex inside a different vertex
+alice.moveTo(devs);
+
+// Bind a vertex to a type to set its properties like regular fields
+const bob = qa.newChild().bind<{ name: string; age: number }>();
+bob.name = "Bob";
+bob.age = 33;
+
+// Use a Zod type for runtime type checks
+import { z } from "zod";
 const Person = z.object({ name: z.string(), age: z.number().int().min(0) });
-
-const person = v.bind(Person);
-
-person.name = 'Alice'; // validated and persisted
-person.age = 33;       // validated and persisted
+const casey = devs.newNamedChild("Casey").bind(Person);
+casey.name = "Casey";
+casey.age = 34;
 ```
 
-#### Aliases for internal fields
-
-- `name` ↔ `_n`
-- `createdAt` ↔ `_c` (Date exposed, ISO stored)
-
-These aliases are applied by default when using `vertex.bind()`.
-
-```ts
-person.name = 'Alice';          // writes _n
-person.createdAt = new Date();  // writes _c (ISO)
-console.log(person.createdAt instanceof Date); // true
-```
-
-For more, see `docs/reactive-vertices.md`. 
+### Example 2
 
 ```typescript
-import { RepTree } from 'reptree';
+import { RepTree } from "reptree";
 
 // Create a new tree
-const tree = new RepTree('peer1');
+const tree = new RepTree("peer1");
 const root = tree.createRoot();
-root.name = 'Project';
+root.name = "Project";
 
 // Create a folder structure with properties
-const docsFolder = root.newNamedChild('Docs');
+const docsFolder = root.newNamedChild("Docs");
 docsFolder.setProperties({
-  type: 'folder',
-  icon: 'folder-icon'
+  type: "folder",
+  icon: "folder-icon",
 });
 
-const imagesFolder = root.newNamedChild('Images');
+const imagesFolder = root.newNamedChild("Images");
 imagesFolder.setProperties({
-  type: 'folder',
-  icon: 'image-icon'
+  type: "folder",
+  icon: "image-icon",
 });
 
 // Add files to folders
-const readmeFile = docsFolder.newNamedChild('README.md');
+const readmeFile = docsFolder.newNamedChild("README.md");
 readmeFile.setProperties({
-  type: 'file',
+  type: "file",
   size: 2048,
-  lastModified: '2023-10-15T14:22:10Z',
-  s3Path: 's3://my-bucket/docs/README.md'
+  lastModified: "2023-10-15T14:22:10Z",
+  s3Path: "s3://my-bucket/docs/README.md",
 });
 
-const logoFile = imagesFolder.newNamedChild('logo.png');
+const logoFile = imagesFolder.newNamedChild("logo.png");
 logoFile.setProperties({
-  type: 'file',
+  type: "file",
   size: 15360,
-  dimensions: '512x512',
-  format: 'png',
-  s3Path: 's3://my-bucket/images/logo.png'
+  dimensions: "512x512",
+  format: "png",
+  s3Path: "s3://my-bucket/images/logo.png",
 });
 
 // Move a file to a different folder
@@ -102,22 +99,17 @@ logoFile.moveTo(docsFolder);
 const docsFolderContents = docsFolder.children;
 
 // Syncing between trees
-const otherTree = new RepTree('peer2');
+const otherTree = new RepTree("peer2");
 const ops = tree.getAllOps();
 otherTree.merge(ops);
 ```
 
-### Creating children with normalized props
+## CRDTs
 
-`vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:
+RepTree uses two conflict-free replicated data types (CRDTs):
 
-- Map `name` → `_n`, `createdAt` (Date) → `_c` (ISO)
-- Filter unsupported types (non-primitive objects)
-- Ignore `props.name` if `newNamedChild` has an explicit `name`
-- Forbid nested children in props for now
-## Yjs
-
-We previously supported Yjs in this repository, but it has been removed to keep the core library lightweight. If you need Yjs integration, see `docs/yjs.md` and the `yjs-2025` branch.
+- A move tree CRDT for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
+- A last writer wins (LWW) CRDT is used for properties.
 
 ## License
 
