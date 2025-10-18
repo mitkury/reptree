@@ -5,17 +5,12 @@ export type TreeVertexId = string;
 /**
  * Serializable CRDT data for operations
  */
-// Yjs support was removed in this branch. Only LWW primitives are supported.
+// Only LWW primitives are supported.
 
-/**
- * Property type for state - includes Y.Doc for runtime usage
- */
+/** Property type for state */
 export type VertexPropertyType = string | number | boolean | string[] | number[] | boolean[] | undefined;
 
-/**
- * Property type for operations - includes CRDTType instead of Y.Doc
- */
-// For operations we persist the same primitive types as values (LWW only)
+/** Property type for operations (same primitive types as state) */
 export type VertexPropertyTypeInOperation = VertexPropertyType;
 
 export type TreeVertexProperty = {

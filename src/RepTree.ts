@@ -15,7 +15,7 @@ import { type OpId, compareOpId, equalsOpId, isOpIdGreaterThan, opIdToString } f
 import uuid from "./uuid";
 import { Vertex } from './Vertex';
 import { StateVector } from './StateVector';
-// Yjs integration removed in this branch; only LWW primitives are supported
+// LWW primitives are supported
 
 type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
 
@@ -37,7 +37,7 @@ export class RepTree {
   private setPropertyOps: SetVertexProperty[] = [];
   private propertiesAndTheirOpIds: Map<PropertyKeyAtVertexId, OpId> = new Map();
   private transientPropertiesAndTheirOpIds: Map<PropertyKeyAtVertexId, OpId> = new Map();
-  // Yjs observers removed
+  // Observers for non-structural properties are not used
   private localOps: VertexOperation[] = [];
   private pendingMovesWithMissingParent: Map<string, MoveVertex[]> = new Map();
   private pendingPropertiesWithMissingVertex: Map<string, SetVertexProperty[]> = new Map();
@@ -637,7 +637,7 @@ export class RepTree {
     this.reportOpAsApplied(op);
   }
 
-  // Yjs observer setup removed
+  // Non-LWW observer setup removed
 
   private applyProperty(op: SetVertexProperty) {
     const targetVertex = this.state.getVertex(op.targetId);
@@ -693,7 +693,7 @@ export class RepTree {
     }
   }
 
-  // applyModifyProperty removed along with Yjs support
+  // Non-LWW modify-property flow removed
 
   private applyOperation(op: VertexOperation) {
     if (isMoveVertexOp(op)) {
