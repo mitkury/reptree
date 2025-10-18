@@ -1,4 +1,4 @@
-# RepTree
+# RepTree - replicated trees with properties
 
 A JavaScript tree data structure for storing and syncing app state. It can be used both to represent and persist the state in the frontend and backend.
 
@@ -8,9 +8,11 @@ RepTree uses [CRDTs](https://crdt.tech/) for seamless replication between users.
 
 ## What it solves
 
-If you have a tree structure in your app where each node/vertex/leaf can be moved independently by multiple users, you would need to have a solution that solved potential conflicts where users try to move the same vertex in different ways. Otherwise your tree state will diverge or get loops. So that is any folder structure (people creating and moving folders around), 2D/3D scenes with objects being moved around and getting parented, a Notion-like document with blocks with texts and other properties being edited by users.
+If you have a tree structure in your app where each vertex/node/leaf can be moved independently by multiple users, you need a solution that resolves conflicts when the same vertex is moved in different ways. Otherwise your tree can diverge or form loops. This includes folder structures (people creating and moving folders), 2D/3D scenes with objects being moved and parented, and Notion‑like documents where blocks with text and other properties are edited by users.
 
-## Getting Started
+You probably also want properties on each vertex/node/leaf and to have them sync correctly between peers without conflicts. RepTree syncs properties too.
+
+## Getting started
 
 ```bash
 npm install reptree
@@ -107,9 +109,8 @@ otherTree.merge(ops);
 ## CRDTs
 
 RepTree uses two conflict-free replicated data types (CRDTs):
-
 - A move tree CRDT for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
-- A last writer wins (LWW) CRDT is used for properties.
+- A last-writer-wins (LWW) CRDT is for properties.
 
 ## License
 
