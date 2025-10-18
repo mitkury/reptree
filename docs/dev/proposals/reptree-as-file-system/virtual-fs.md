@@ -5,7 +5,7 @@ Status: Draft
 
 ## 1 — Why
 
-Provide an **in‑RAM, CRDT‑friendly file system** for Supa workspaces and other applications that embed RepTree.  
+Provide an **in‑RAM, CRDT‑friendly file system** for Sila workspaces and other applications that embed RepTree.  
 Let every "file" use the storage model that fits it best:
 
 * **Editable** → CRDT (RepTree with optional Yjs properties).  
