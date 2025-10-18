@@ -10,9 +10,6 @@ export type TreeVertexId = string;
 /** Property type for state */
 export type VertexPropertyType = string | number | boolean | string[] | number[] | boolean[] | undefined;
 
-/** Property type for operations (same primitive types as state) */
-export type VertexPropertyTypeInOperation = VertexPropertyType;
-
 export type TreeVertexProperty = {
   readonly key: string;
   readonly value: VertexPropertyType;

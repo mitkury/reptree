@@ -8,7 +8,7 @@ import {
   newSetTransientVertexPropertyOp,
   isAnyPropertyOp
 } from "./operations";
-import type { VertexPropertyType, VertexPropertyTypeInOperation, TreeVertexProperty, VertexChangeEvent, TreeVertexId, VertexMoveEvent } from "./treeTypes";
+import type { VertexPropertyType, TreeVertexProperty, VertexChangeEvent, TreeVertexId, VertexMoveEvent } from "./treeTypes";
 import { VertexState } from "./VertexState";
 import { TreeState } from "./TreeState";
 import { type OpId, compareOpId, equalsOpId, isOpIdGreaterThan, opIdToString } from "./OpId";
@@ -233,7 +233,7 @@ export class RepTree {
 
   setTransientVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
     this.lamportClock++;
-    const op = newSetTransientVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, value as VertexPropertyTypeInOperation);
+    const op = newSetTransientVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, value as VertexPropertyType);
     this.localOps.push(op);
     this.applyProperty(op);
   }
@@ -262,7 +262,7 @@ export class RepTree {
 
   setVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
     this.lamportClock++;
-    const op = newSetVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, value as VertexPropertyTypeInOperation);
+    const op = newSetVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, value as VertexPropertyType);
     this.localOps.push(op);
     this.applyProperty(op);
   }

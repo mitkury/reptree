@@ -1,5 +1,5 @@
 import { type OpId, createOpId } from "./OpId";
-import { type VertexPropertyTypeInOperation } from "./treeTypes";
+import { type VertexPropertyType } from "./treeTypes";
 
 export interface MoveVertex {
   id: OpId;
@@ -11,7 +11,7 @@ export interface SetVertexProperty {
   id: OpId;
   targetId: string;
   key: string;
-  value: VertexPropertyTypeInOperation;
+  value: VertexPropertyType;
   transient: boolean;
 }
 
@@ -29,10 +29,10 @@ export function newMoveVertexOp(clock: number, peerId: string, targetId: string,
   return { id: createOpId(clock, peerId), targetId, parentId };
 }
 
-export function newSetVertexPropertyOp(clock: number, peerId: string, targetId: string, key: string, value: VertexPropertyTypeInOperation): SetVertexProperty {
+export function newSetVertexPropertyOp(clock: number, peerId: string, targetId: string, key: string, value: VertexPropertyType): SetVertexProperty {
   return { id: createOpId(clock, peerId), targetId, key, value, transient: false };
 }
 
-export function newSetTransientVertexPropertyOp(clock: number, peerId: string, targetId: string, key: string, value: VertexPropertyTypeInOperation): SetVertexProperty {
+export function newSetTransientVertexPropertyOp(clock: number, peerId: string, targetId: string, key: string, value: VertexPropertyType): SetVertexProperty {
   return { id: createOpId(clock, peerId), targetId, key, value, transient: true };
 }
