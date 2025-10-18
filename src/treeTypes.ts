@@ -1,25 +1,14 @@
 import { VertexState } from "./VertexState";
-import * as Y from 'yjs';
 
 export type TreeVertexId = string;
 
 /**
  * Serializable CRDT data for operations
  */
-export interface CRDTType {
-  type: string;           // e.g., "yjs"
-  value: Uint8Array;      // Serialized CRDT state
-}
+// Only LWW primitives are supported.
 
-/**
- * Property type for state - includes Y.Doc for runtime usage
- */
-export type VertexPropertyType = string | number | boolean | string[] | number[] | boolean[] | undefined | Y.Doc;
-
-/**
- * Property type for operations - includes CRDTType instead of Y.Doc
- */
-export type VertexPropertyTypeInOperation = string | number | boolean | string[] | number[] | boolean[] | undefined | CRDTType;
+/** Property type for state */
+export type VertexPropertyType = string | number | boolean | string[] | number[] | boolean[] | undefined;
 
 export type TreeVertexProperty = {
   readonly key: string;
