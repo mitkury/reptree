@@ -217,7 +217,7 @@ export class RepTree {
     if (typedProps) {
       this.setVertexProperties(vertexId, typedProps);
     }
-    this.setVertexProperty(vertexId, '_n', name);
+    this.setVertexProperty(vertexId, 'name', name);
 
     const vertex = this.state.getVertex(vertexId);
     if (!vertex) {
@@ -311,10 +311,10 @@ export class RepTree {
     }
 
     const targetName = path[0];
-    // Now, search recursively by name '_n' in children until the path is empty or not found.
+    // Now, search recursively by name 'name' in children until the path is empty or not found.
     const children = this.getChildren(vertex.id);
     for (const child of children) {
-      if (child.getProperty('_n') === targetName) {
+      if (child.getProperty('name') === targetName) {
         return this.getVertexByPathArray(child, path.slice(1));
       }
     }

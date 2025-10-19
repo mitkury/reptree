@@ -18,11 +18,11 @@ export class Vertex {
   }
 
   get name(): string | undefined {
-    return this.getProperty('_n') as string | undefined;
+    return this.getProperty('name') as string | undefined;
   }
 
   set name(name: string) {
-    this.tree.setVertexProperty(this.id, '_n', name);
+    this.tree.setVertexProperty(this.id, 'name', name);
   }
 
   get createdAt(): Date {
@@ -179,7 +179,6 @@ export class Vertex {
 
   /**
    * Normalizes an input props object for vertex creation:
-   * - Aliases name -> _n, createdAt -> _c (Date -> ISO string)
    * - Filters unsupported field types with a console warning
    * - When a name param is provided to newNamedChild, ignores conflicting name in props
    */
@@ -198,17 +197,12 @@ export class Vertex {
       // Disallow nested children handled earlier; skip here defensively
       if (rawKey === 'children') continue;
 
-      // Alias mapping
+      // Use keys as-is
       let key = rawKey;
-      if (rawKey === 'name') {
-        if (explicitName !== undefined) {
-          // Explicit argument takes precedence
-          console.warn('newNamedChild: "name" in props is ignored because a name argument was provided');
-          continue;
-        }
-        key = '_n';
-      } else if (rawKey === 'createdAt') {
-        key = '_c';
+      if (rawKey === 'name' && explicitName !== undefined) {
+        // Explicit argument takes precedence
+        console.warn('newNamedChild: "name" in props is ignored because a name argument was provided');
+        continue;
       }
 
       // Value normalization

@@ -45,18 +45,10 @@ person.name = 'Alice'; // validated and persisted
 person.age = 33;       // validated and persisted
 ```
 
-#### Aliases for internal fields
+#### Field behavior
 
-- `name` ↔ `_n`
-- `createdAt` ↔ `_c` (Date exposed, ISO stored)
-
-These aliases are applied by default when using `vertex.bind()`.
-
-```ts
-person.name = 'Alice';          // writes _n
-person.createdAt = new Date();  // writes _c (ISO)
-console.log(person.createdAt instanceof Date); // true
-```
+- `name` is stored directly as `name`.
+- `createdAt` is stored as `_c` (ISO string).
 
 For more, see `docs/reactive-vertices.md`. 
 
@@ -115,7 +107,6 @@ otherTree.merge(ops);
 
 `vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:
 
-- Map `name` → `_n`, `createdAt` (Date) → `_c` (ISO)
 - Filter unsupported types (non-primitive objects)
 - Ignore `props.name` if `newNamedChild` has an explicit `name`
 - Forbid nested children in props for now
@@ -232,8 +223,6 @@ RepTree uses range-based state vectors to track which operations have been appli
 
 ### State Vector Structure
 
-A state vector is represented as a mapping from peer IDs to arrays of ranges:
-
 ```typescript
 // Type: Record<peerId, number[][]>
 // Example: { "peer1": [[1, 5], [8, 10]], "peer2": [[1, 7]] }
@@ -292,7 +281,6 @@ The state vector functionality in RepTree:
 - Is enabled by default
 - Can be toggled on/off with the `stateVectorEnabled` property
 - Will automatically rebuild from existing operations when re-enabled
----
 
 # From docs/reactive-vertices.md:
 
@@ -361,30 +349,10 @@ const unobserve = folder.$observeChildren(children => {
 
 All vertex properties and methods are read-only and cannot be overwritten.
 
-### Public aliases for internal fields
+### Field behavior
 
 - name ↔ `_n`
 - createdAt ↔ `_c` (stored as ISO string; exposed as Date)
-
-These aliases are applied by default when using `vertex.bind()`.
-
-```ts
-person.name = 'Alice';              // writes _n = 'Alice'
-person.createdAt = new Date();      // writes _c = ISO string
-console.log(person.createdAt);      // Date instance
-```
-
-You can customize aliasing via options:
-
-```ts
-import { defaultAliases } from 'reptree';
-
-const custom = v.bind({
-  schema: Person,
-  aliases: defaultAliases,
-  includeInternalKeys: false,
-});
-```
 
 ## Zod v4 Validation (Optional)
 
@@ -441,15 +409,13 @@ console.log(person.name); // 'Alice (draft)'
 
 Notes:
 
-- Aliases apply for transient edits too (e.g., `createdAt` ↔ `_c` with Date↔ISO conversion).
 - If a schema is provided, transient writes are validated/coerced the same as persistent writes; `commitTransients()` persists the validated values.
 - Persistent writes with a newer operation automatically clear the transient overlay for that key.
 
-## Creating children with normalized props
+### Creating children with normalized props
 
 `vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:
 
-- Map `name` → `_n`, and `createdAt` (Date) → `_c` (ISO string)
 - Filter unsupported types (non-primitive objects)
 - Ignore `props.name` if `newNamedChild` receives an explicit `name` argument
 - Forbid nested children in props for now
@@ -457,10 +423,10 @@ Notes:
 ```ts
 const child = root.newChild({
   name: 'ChildA',
-  createdAt: new Date(),
+  _c: new Date().toISOString(),
   age: 5,
 });
-// Internally stores _n, _c, age
+// Stores name, _c, age
 
 const child2 = root.newNamedChild('Folder', { name: 'ignored', flag: true });
 // Uses explicit name 'Folder'; props.name is ignored

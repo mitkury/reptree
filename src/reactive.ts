@@ -11,26 +11,8 @@ export type SchemaLike<T> = {
   shape?: Record<string, FieldSchemaLike>;
 };
 
-export type AliasRule = {
-  publicKey: string;
-  internalKey: string;
-  toPublic?: (value: unknown) => unknown;
-  toInternal?: (value: unknown) => unknown;
-};
-
-export const defaultAliases: AliasRule[] = [
-  { publicKey: 'name', internalKey: '_n' },
-  {
-    publicKey: 'createdAt',
-    internalKey: '_c',
-    toPublic: (v: unknown) => (typeof v === 'string' ? new Date(v) : v),
-    toInternal: (v: unknown) => (v instanceof Date ? v.toISOString() : v),
-  },
-];
-
 export type BindOptions<T> = {
   schema?: SchemaLike<T>;
-  aliases?: AliasRule[];
   includeInternalKeys?: boolean;
 };
 
@@ -96,16 +78,6 @@ export type BindedVertex<T> = T & {
   $newNamedChild(name: string, props?: Record<string, any> | object | null): Vertex;
 };
 
-function buildAliasMaps(aliases: AliasRule[]) {
-  const publicToInternal = new Map<string, AliasRule>();
-  const internalToPublic = new Map<string, AliasRule>();
-  for (const rule of aliases) {
-    publicToInternal.set(rule.publicKey, rule);
-    internalToPublic.set(rule.internalKey, rule);
-  }
-  return { publicToInternal, internalToPublic };
-}
-
 /**
  * Returns a live Proxy that forwards reads/writes to a vertex.
  * - Reads reflect the latest CRDT state (including transients by default)
@@ -118,7 +90,6 @@ export function bindVertex<T extends Record<string, unknown>>(
 ): BindedVertex<T> {
   const isOptions =
     typeof schemaOrOptions === 'object' && schemaOrOptions !== null && (
-      Object.prototype.hasOwnProperty.call(schemaOrOptions as object, 'aliases') ||
       Object.prototype.hasOwnProperty.call(schemaOrOptions as object, 'includeInternalKeys') ||
       Object.prototype.hasOwnProperty.call(schemaOrOptions as object, 'schema')
     );
@@ -128,8 +99,6 @@ export function bindVertex<T extends Record<string, unknown>>(
     : { schema: schemaOrOptions as SchemaLike<T> }) as BindOptions<T>;
 
   const schema = options.schema;
-  const aliases = options.aliases ?? defaultAliases;
-  const { publicToInternal } = buildAliasMaps(aliases);
 
   const obj: any = {};
 
@@ -169,19 +138,14 @@ export function bindVertex<T extends Record<string, unknown>>(
         const transientProxy = new Proxy({} as any, {
           set(_, prop: string | symbol, value: unknown) {
             if (typeof prop === 'string') {
-              const rule = publicToInternal.get(prop);
-              const internalKey = rule?.internalKey ?? prop;
-              const internalValue = rule?.toInternal ? rule.toInternal(value) : value;
-              tree.setTransientVertexProperty(id, internalKey, internalValue as any);
+              tree.setTransientVertexProperty(id, prop, value as any);
             }
             return true;
           },
           get(_, prop: string | symbol) {
             if (typeof prop !== 'string') return undefined;
-            const rule = publicToInternal.get(prop);
-            const internalKey = rule?.internalKey ?? prop;
-            const rawValue = tree.getVertexProperty(id, internalKey, true);
-            return rule?.toPublic ? rule.toPublic(rawValue as unknown) : rawValue;
+            const rawValue = tree.getVertexProperty(id, prop, true);
+            return rawValue as unknown;
           },
         });
         fn(transientProxy);
@@ -212,11 +176,8 @@ export function bindVertex<T extends Record<string, unknown>>(
       if (prop in target) {
         return Reflect.get(target, prop, receiver);
       }
-
-      const rule = publicToInternal.get(prop);
-      const internalKey = rule?.internalKey ?? prop;
-      const rawValue = tree.getVertexProperty(id, internalKey, true);
-      return rule?.toPublic ? rule.toPublic(rawValue as unknown) : rawValue;
+      const rawValue = tree.getVertexProperty(id, prop, true);
+      return rawValue;
     },
 
     set(target, prop: string | symbol, value: unknown) {
@@ -233,10 +194,7 @@ export function bindVertex<T extends Record<string, unknown>>(
         }
       }
 
-      const rule = publicToInternal.get(prop);
-      const internalKey = rule?.internalKey ?? prop;
-      const internalValue = rule?.toInternal ? rule.toInternal(value) : value;
-      tree.setVertexProperty(id, internalKey, internalValue as any);
+      tree.setVertexProperty(id, prop, value as any);
       return true;
     },
 
@@ -244,9 +202,7 @@ export function bindVertex<T extends Record<string, unknown>>(
       if (typeof prop !== 'string') {
         return true;
       }
-      const rule = publicToInternal.get(prop);
-      const internalKey = rule?.internalKey ?? prop;
-      tree.setVertexProperty(id, internalKey, undefined as any);
+      tree.setVertexProperty(id, prop, undefined as any);
       return true;
     },
   });

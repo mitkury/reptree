@@ -14,11 +14,11 @@ describe('bindVertex reactive wrapper', () => {
     person['name' as keyof typeof person] = 'Alice' as any;
     person['age' as keyof typeof person] = 30 as any;
 
-    expect(tree.getVertexProperty(v.id, '_n')).toBe('Alice');
+    expect(tree.getVertexProperty(v.id, 'name')).toBe('Alice');
     expect(tree.getVertexProperty(v.id, 'age')).toBe(30);
 
     // update via CRDT -> reflected on reads (use internal key)
-    tree.setVertexProperty(v.id, '_n', 'Bob');
+    tree.setVertexProperty(v.id, 'name', 'Bob');
     expect(person['name' as keyof typeof person]).toBe('Bob');
   });
 
@@ -37,7 +37,7 @@ describe('bindVertex reactive wrapper', () => {
     person.name = 'Alice';
     person.age = 33;
 
-    expect(tree.getVertexProperty(v.id, '_n')).toBe('Alice');
+    expect(tree.getVertexProperty(v.id, 'name')).toBe('Alice');
     expect(tree.getVertexProperty(v.id, 'age')).toBe(33);
 
     expect(() => (person.age = -1)).toThrowError();
@@ -53,10 +53,10 @@ describe('bindVertex reactive wrapper', () => {
     person['name' as keyof typeof person] = 'Carol' as any;
     person['age' as keyof typeof person] = 28 as any;
 
-    expect(tree.getVertexProperty(v.id, '_n')).toBe('Carol');
+    expect(tree.getVertexProperty(v.id, 'name')).toBe('Carol');
     expect(tree.getVertexProperty(v.id, 'age')).toBe(28);
 
-    tree.setVertexProperty(v.id, '_n', 'Dave');
+    tree.setVertexProperty(v.id, 'name', 'Dave');
     expect(person.name).toBe('Dave');
   });
 
@@ -75,13 +75,13 @@ describe('bindVertex reactive wrapper', () => {
     person.name = 'Eve' as any;
     person.age = 41 as any;
 
-    expect(tree.getVertexProperty(v.id, '_n')).toBe('Eve');
+    expect(tree.getVertexProperty(v.id, 'name')).toBe('Eve');
     expect(tree.getVertexProperty(v.id, 'age')).toBe(41);
 
     expect(() => (person.age = -5 as any)).toThrowError();
   });
 
-  test('aliases: name <-> _n and createdAt <-> _c with Date conversion', () => {
+  test('createdAt is stored at _c as ISO string; name is direct', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
     const v = tree.newVertex(root.id);
@@ -89,7 +89,6 @@ describe('bindVertex reactive wrapper', () => {
     const Person = z.object({
       name: z.string(),
       age: z.number().int().min(0),
-      createdAt: z.date().optional(),
     });
 
     const person = v.bind(Person);
@@ -98,27 +97,26 @@ describe('bindVertex reactive wrapper', () => {
     const now = new Date('2025-01-01T00:00:00.000Z');
     person.name = 'Frank' as any;
     person.age = 20 as any;
-    person.createdAt = now as any;
+    person['_c' as any] = now.toISOString() as any;
 
-    expect(tree.getVertexProperty(v.id, '_n')).toBe('Frank');
+    expect(tree.getVertexProperty(v.id, 'name')).toBe('Frank');
     expect(tree.getVertexProperty(v.id, 'age')).toBe(20);
     expect(tree.getVertexProperty(v.id, '_c')).toBe(now.toISOString());
 
-    // Read public keys -> converted from internal
+    // Read public keys -> direct values
     const name = person['name' as keyof typeof person] as unknown as string;
-    const createdAt = person['createdAt' as keyof typeof person] as unknown as Date;
+    const createdAt = person['_c' as any] as unknown as string;
     expect(name).toBe('Frank');
-    expect(createdAt instanceof Date).toBe(true);
-    expect(createdAt.toISOString()).toBe(now.toISOString());
+    expect(createdAt).toBe(now.toISOString());
   });
 
-  test('newChild props alias resolution and type filtering', () => {
+  test('newChild props normalization and type filtering', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
 
     const child = root.newChild({
       name: 'ChildA',
-      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      _c: '2024-01-01T00:00:00.000Z',
       age: 5,
       flags: [true, false],
       badObj: { nested: true } as any,
@@ -126,7 +124,7 @@ describe('bindVertex reactive wrapper', () => {
       undef: undefined,
     } as any);
 
-    expect(child.getProperty('_n')).toBe('ChildA');
+    expect(child.getProperty('name')).toBe('ChildA');
     expect(child.getProperty('_c')).toBe('2024-01-01T00:00:00.000Z');
     expect(child.getProperty('age')).toBe(5);
     expect(child.getProperty('flags')).toEqual([true, false]);
@@ -140,14 +138,14 @@ describe('bindVertex reactive wrapper', () => {
     const root = tree.createRoot();
 
     const child = root.newNamedChild('Explicit', { name: 'Ignored', age: 1 } as any);
-    expect(child.getProperty('_n')).toBe('Explicit');
+    expect(child.getProperty('name')).toBe('Explicit');
     expect(child.getProperty('age')).toBe(1);
 
     expect(() => root.newChild({ children: [] } as any)).toThrowError();
     expect(() => root.newNamedChild('X', { children: [] } as any)).toThrowError();
   });
 
-  test('whole-object validation uses public keys for aliases', () => {
+  test('whole-object validation uses direct keys', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
     const v = tree.newVertex(root.id);
@@ -155,23 +153,19 @@ describe('bindVertex reactive wrapper', () => {
     const Person = z.object({
       name: z.string(),
       age: z.number().int().min(0),
-      createdAt: z.date(),
     });
 
     const person = v.bind(Person);
 
-    // Invalid: createdAt must be a Date
-    expect(() => {
-      (person as any).createdAt = 'not-a-date';
-    }).toThrowError();
+    // No special validation for _c here
 
     // Valid path
     const now = new Date('2025-01-02T00:00:00.000Z');
     person.name = 'Gina';
     person.age = 44;
-    person.createdAt = now;
+    person['_c' as any] = now.toISOString();
 
-    expect(tree.getVertexProperty(v.id, '_n')).toBe('Gina');
+    expect(tree.getVertexProperty(v.id, 'name')).toBe('Gina');
     expect(tree.getVertexProperty(v.id, '_c')).toBe(now.toISOString());
   });
 
@@ -183,7 +177,6 @@ describe('bindVertex reactive wrapper', () => {
     const Person = z.object({
       name: z.string(),
       age: z.number().int().min(0),
-      createdAt: z.date().optional(),
     });
 
     const person = bindVertex(tree, v.id, Person);
@@ -193,23 +186,22 @@ describe('bindVertex reactive wrapper', () => {
     person.$useTransients(p => {
       p.name = 'Draft' as any;
       p.age = 25 as any;
-      p.createdAt = when as any;
+      (p as any)['_c'] = when.toISOString() as any;
     });
 
-    // Reads reflect transient overlay (with alias conversion for createdAt)
+    // Reads reflect transient overlay
     expect(person.name).toBe('Draft');
     expect(person.age).toBe(25);
-    const createdAt = person['createdAt' as keyof typeof person] as unknown as Date;
-    expect(createdAt instanceof Date).toBe(true);
-    expect(createdAt.toISOString()).toBe(when.toISOString());
+    const createdAt = person['_c' as any] as unknown as any;
+    expect(createdAt).toBe(when.toISOString());
 
     // Underlying persistent values haven't been set yet (except _c which is created at creation time)
-    expect(tree.getVertexProperty(v.id, '_n', false)).toBeUndefined();
+    expect(tree.getVertexProperty(v.id, 'name', false)).toBeUndefined();
     expect(tree.getVertexProperty(v.id, 'age', false)).toBeUndefined();
 
     // Promote transients -> persist them
     person.$commitTransients();
-    expect(tree.getVertexProperty(v.id, '_n', false)).toBe('Draft');
+    expect(tree.getVertexProperty(v.id, 'name', false)).toBe('Draft');
     expect(tree.getVertexProperty(v.id, 'age', false)).toBe(25);
     // createdAt persisted as ISO
     expect(tree.getVertexProperty(v.id, '_c', false)).toBe(when.toISOString());
@@ -330,14 +322,14 @@ describe('bindVertex reactive wrapper', () => {
     // Create unnamed child
     const child1 = boundRoot.$newChild({ name: 'Child1', age: 10 });
     expect(child1.id).toBeDefined();
-    expect(child1.getProperty('_n')).toBe('Child1');
+    expect(child1.getProperty('name')).toBe('Child1');
     expect(child1.getProperty('age')).toBe(10);
     expect(boundRoot.$childrenIds).toContain(child1.id);
 
     // Create named child
     const child2 = boundRoot.$newNamedChild('Child2', { age: 20 });
     expect(child2.id).toBeDefined();
-    expect(child2.getProperty('_n')).toBe('Child2');
+    expect(child2.getProperty('name')).toBe('Child2');
     expect(child2.getProperty('age')).toBe(20);
     expect(boundRoot.$childrenIds).toContain(child2.id);
 
@@ -368,7 +360,7 @@ describe('bindVertex reactive wrapper', () => {
     expect(events.length).toBeGreaterThan(0);
     const propertyEvents = events.filter(e => e.type === 'property');
     expect(propertyEvents.length).toBeGreaterThan(0);
-    expect(propertyEvents.some(e => e.key === '_n')).toBe(true);
+    expect(propertyEvents.some(e => e.key === 'name')).toBe(true);
 
     // Cleanup
     unobserve();

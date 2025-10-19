@@ -231,7 +231,7 @@ export class TreeState {
       const vertex = this.getVertex(vertexId);
       if (vertex) {
         for (const prop of vertex.getAllProperties()) {
-          if (prop.key === "_n") {
+          if (prop.key === "name") {
             vertexName = prop.value as string;
             //continue;
           }
@@ -249,8 +249,8 @@ export class TreeState {
       const vertexA = this.getVertex(a);
       const vertexB = this.getVertex(b);
       
-      const nameA = vertexA?.getProperty('_n') as string | undefined;
-      const nameB = vertexB?.getProperty('_n') as string | undefined;
+      const nameA = vertexA?.getProperty('name') as string | undefined;
+      const nameB = vertexB?.getProperty('name') as string | undefined;
       
       // If both have names, compare them
       if (nameA && nameB) {
