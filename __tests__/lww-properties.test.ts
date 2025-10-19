@@ -38,4 +38,12 @@ describe('LWW Properties', () => {
   test('should handle string properties with LWW semantics', () => {
     testPropertyType('name', ['one', 'two', 'three', 'four'], 'four');
   });
+
+  test('should handle array properties with LWW semantics', () => {
+    testPropertyType('tags', [[], ['a'], ['a','b'], ['x','y','z']], ['x','y','z']);
+  });
+
+  test('should handle object properties with LWW semantics', () => {
+    testPropertyType('meta', [{}, {a:1}, {a:1,b:2}, {nested:{x:1}}], {nested:{x:1}});
+  });
 });

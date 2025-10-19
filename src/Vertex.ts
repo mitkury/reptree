@@ -188,6 +188,25 @@ export class Vertex {
     const out: Record<string, VertexPropertyType> = {};
     const skipped: string[] = [];
 
+    const isJsonValue = (v: any): v is VertexPropertyType => {
+      if (v === null) return true; // null is allowed
+      const t = typeof v;
+      if (t === 'string' || t === 'number' || t === 'boolean') return true;
+      if (Array.isArray(v)) return v.every(isJsonValue);
+      if (t === 'object') {
+        // Plain object with JSON-serializable values only
+        // Exclude Date, Map, Set, RegExp, etc.
+        const proto = Object.getPrototypeOf(v);
+        if (proto !== Object.prototype && proto !== null) return false;
+        for (const val of Object.values(v)) {
+          if (!isJsonValue(val)) return false;
+        }
+        return true;
+      }
+      // functions, symbols, undefined (handled separately), bigint
+      return false;
+    };
+
     for (const [rawKey, rawValue] of Object.entries(input)) {
       if (rawValue === undefined) {
         // Skip undefined to avoid writing explicit undefineds on creation
@@ -218,19 +237,7 @@ export class Vertex {
         }
       }
 
-      const isPrimitive = (v: any) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
-
-      if (Array.isArray(value)) {
-        // Ensure array of primitives
-        if (!value.every(isPrimitive)) {
-          skipped.push(rawKey);
-          continue;
-        }
-      } else if (typeof value === 'object' && value !== null) {
-        // Unsupported nested object
-        skipped.push(rawKey);
-        continue;
-      } else if (!isPrimitive(value)) {
+      if (!isJsonValue(value)) {
         skipped.push(rawKey);
         continue;
       }
