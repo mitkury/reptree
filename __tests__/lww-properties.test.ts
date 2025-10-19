@@ -13,7 +13,12 @@ describe('LWW Properties', () => {
     }
 
     // Verify final value
-    expect(root.getProperty(propertyName)).toBe(expectedFinalValue);
+    const finalValue = root.getProperty(propertyName);
+    if (expectedFinalValue !== null && typeof expectedFinalValue === 'object') {
+      expect(finalValue).toStrictEqual(expectedFinalValue);
+    } else {
+      expect(finalValue).toBe(expectedFinalValue);
+    }
 
     // Test with operations in reverse order
     const reversedOps = [...tree.getAllOps()].reverse();
@@ -23,7 +28,12 @@ describe('LWW Properties', () => {
     expect(rootFromDuplicateTree).not.toBeUndefined();
     
     if (rootFromDuplicateTree) {
-      expect(rootFromDuplicateTree.getProperty(propertyName)).toBe(expectedFinalValue);
+      const dupValue = rootFromDuplicateTree.getProperty(propertyName);
+      if (expectedFinalValue !== null && typeof expectedFinalValue === 'object') {
+        expect(dupValue).toStrictEqual(expectedFinalValue);
+      } else {
+        expect(dupValue).toBe(expectedFinalValue);
+      }
     }
   }
 
