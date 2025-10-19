@@ -2,93 +2,100 @@ This is a context for AI editor/agent about the project. It's generated with a t
 
 # From README.md:
 
-# RepTree
+# RepTree - replicated trees with properties
 
-A tree data structure using CRDTs for seamless replication between peers.
+A JavaScript tree data structure for storing and syncing app state. It can be used both to represent and persist the state in the frontend and backend.
 
-> 🚧 **Work in Progress**: This package is under active development and APIs may change.
->
-> RepTree was created for the [Supa](https://github.com/supaorg/supa) project, an open-source alternative to ChatGPT.
+RepTree uses [CRDTs](https://crdt.tech/) for seamless replication between users.
 
-## Description
+> RepTree was created for the [Sila](https://github.com/silaorg/sila) project, an open-source alternative to ChatGPT.
 
-RepTree uses multiple conflict-free replicated data types (CRDTs) to manage seamless replication between peers:
-- A move tree CRDT is used for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
-- A last writer wins (LWW) CRDT is used for properties.
-Note: Yjs integration was removed in this branch to keep the core lightweight. See `docs/yjs.md`.
+## What it solves
 
-RepTree can also be viewed as a hierarchical, distributed database. For more details on its database capabilities, see [RepTree as a Database](docs/database.md).
+If you have a tree structure in your app where each vertex/node/leaf can be moved independently by multiple users, you need a solution that resolves conflicts when the same vertex is moved in different ways. Otherwise your tree can diverge or form loops. This includes folder structures (people creating and moving folders), 2D/3D scenes with objects being moved and parented, and Notion‑like documents where blocks with text and other properties are edited by users.
 
-## Installation
+You probably also want properties on each vertex/node/leaf and to have them sync correctly between peers without conflicts. RepTree syncs properties too.
+
+## Getting started
 
 ```bash
 npm install reptree
 ```
 
-## Usage
-
-### Reactive vertex with Zod (optional)
-
+### Example 1 
 ```ts
-import { RepTree } from 'reptree';
-import { z } from 'zod';
+import { RepTree } from "reptree";
 
-const tree = new RepTree('peer1');
-const root = tree.createRoot();
-const v = root.newChild();
+// Create a tree with a root
+const tree = new RepTree("company-org-1");
+const company = tree.createRoot();
 
+// Create a node (we call them vertices in RepTree) in the root of our new tree
+const devs = company.newNamedChild("developers");
+const qa = company.newNamedChild("qa");
+
+// Create a vertex in another vertex
+const alice = qa.newChild();
+
+// Set properties
+alice.setProperty("name", "Alice");
+alice.setProperty("age", 32);
+
+// Move the vertex inside a different vertex
+alice.moveTo(devs);
+
+// Bind a vertex to a type to set its properties like regular fields
+const bob = qa.newChild().bind<{ name: string; age: number }>();
+bob.name = "Bob";
+bob.age = 33;
+
+// Use a Zod type for runtime type checks
+import { z } from "zod";
 const Person = z.object({ name: z.string(), age: z.number().int().min(0) });
-
-const person = v.bind(Person);
-
-person.name = 'Alice'; // validated and persisted
-person.age = 33;       // validated and persisted
+const casey = devs.newNamedChild("Casey").bind(Person);
+casey.name = "Casey";
+casey.age = 34;
 ```
 
-#### Field behavior
-
-- `name` is stored directly as `name`.
-- `createdAt` is stored as `_c` (ISO string).
-
-For more, see `docs/reactive-vertices.md`. 
+### Example 2
 
 ```typescript
-import { RepTree } from 'reptree';
+import { RepTree } from "reptree";
 
 // Create a new tree
-const tree = new RepTree('peer1');
+const tree = new RepTree("peer1");
 const root = tree.createRoot();
-root.name = 'Project';
+root.name = "Project";
 
 // Create a folder structure with properties
-const docsFolder = root.newNamedChild('Docs');
+const docsFolder = root.newNamedChild("Docs");
 docsFolder.setProperties({
-  type: 'folder',
-  icon: 'folder-icon'
+  type: "folder",
+  icon: "folder-icon",
 });
 
-const imagesFolder = root.newNamedChild('Images');
+const imagesFolder = root.newNamedChild("Images");
 imagesFolder.setProperties({
-  type: 'folder',
-  icon: 'image-icon'
+  type: "folder",
+  icon: "image-icon",
 });
 
 // Add files to folders
-const readmeFile = docsFolder.newNamedChild('README.md');
+const readmeFile = docsFolder.newNamedChild("README.md");
 readmeFile.setProperties({
-  type: 'file',
+  type: "file",
   size: 2048,
-  lastModified: '2023-10-15T14:22:10Z',
-  s3Path: 's3://my-bucket/docs/README.md'
+  lastModified: "2023-10-15T14:22:10Z",
+  s3Path: "s3://my-bucket/docs/README.md",
 });
 
-const logoFile = imagesFolder.newNamedChild('logo.png');
+const logoFile = imagesFolder.newNamedChild("logo.png");
 logoFile.setProperties({
-  type: 'file',
+  type: "file",
   size: 15360,
-  dimensions: '512x512',
-  format: 'png',
-  s3Path: 's3://my-bucket/images/logo.png'
+  dimensions: "512x512",
+  format: "png",
+  s3Path: "s3://my-bucket/images/logo.png",
 });
 
 // Move a file to a different folder
@@ -98,21 +105,16 @@ logoFile.moveTo(docsFolder);
 const docsFolderContents = docsFolder.children;
 
 // Syncing between trees
-const otherTree = new RepTree('peer2');
+const otherTree = new RepTree("peer2");
 const ops = tree.getAllOps();
 otherTree.merge(ops);
 ```
 
-### Creating children with normalized props
+## CRDTs
 
-`vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:
-
-- Filter unsupported types (non-primitive objects)
-- Ignore `props.name` if `newNamedChild` has an explicit `name`
-- Forbid nested children in props for now
-## Yjs
-
-We previously supported Yjs in this repository, but it has been removed to keep the core library lightweight. If you need Yjs integration, see `docs/yjs.md` and the `yjs-2025` branch.
+RepTree uses two conflict-free replicated data types (CRDTs):
+- A move tree CRDT for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
+- A last-writer-wins (LWW) CRDT is for properties.
 
 ## License
 
@@ -154,7 +156,7 @@ bench - anything related to benchmarks
 
 {
   "name": "reptree",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "description": "A tree data structure using CRDTs for seamless replication between peers",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -198,7 +200,6 @@ bench - anything related to benchmarks
   },
   "devDependencies": {
     "airul": "^0.1.39",
-    "jsdom": "^27.0.0",
     "ts-node": "^10.9.1",
     "tsup": "^8.0.1",
     "typescript": "^5.2.2",
@@ -222,6 +223,8 @@ RepTree uses range-based state vectors to track which operations have been appli
 ## Implementation
 
 ### State Vector Structure
+
+A state vector is represented as a mapping from peer IDs to arrays of ranges:
 
 ```typescript
 // Type: Record<peerId, number[][]>
@@ -281,6 +284,7 @@ The state vector functionality in RepTree:
 - Is enabled by default
 - Can be toggled on/off with the `stateVectorEnabled` property
 - Will automatically rebuild from existing operations when re-enabled
+---
 
 # From docs/reactive-vertices.md:
 
@@ -351,8 +355,8 @@ All vertex properties and methods are read-only and cannot be overwritten.
 
 ### Field behavior
 
-- name ↔ `_n`
-- createdAt ↔ `_c` (stored as ISO string; exposed as Date)
+- `name` is stored directly as `name`.
+- `createdAt` is stored as `_c` (ISO string). No auto-conversion on reads/writes via binding; you can store a `Date` in transients and commit it to `_c` yourself if needed.
 
 ## Zod v4 Validation (Optional)
 
@@ -412,7 +416,7 @@ Notes:
 - If a schema is provided, transient writes are validated/coerced the same as persistent writes; `commitTransients()` persists the validated values.
 - Persistent writes with a newer operation automatically clear the transient overlay for that key.
 
-### Creating children with normalized props
+## Creating children with normalized props
 
 `vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:
 
