@@ -82,7 +82,7 @@ export class Vertex {
       throw new Error('Passing children inside props is not supported at the moment');
     }
 
-    const normalized = Vertex.normalizePropsForCreation(props, name);
+    const normalized = Vertex.normalizePropsForCreation(props);
     return this.tree.newNamedVertex(this.id, name, normalized);
   }
 
@@ -182,7 +182,7 @@ export class Vertex {
    * - Filters unsupported field types with a console warning
    * - When a name param is provided to newNamedChild, ignores conflicting name in props
    */
-  private static normalizePropsForCreation(props?: Record<string, VertexPropertyType> | object | null, explicitName?: string): Record<string, VertexPropertyType> | null {
+  private static normalizePropsForCreation(props?: Record<string, VertexPropertyType> | object | null): Record<string, VertexPropertyType> | null {
     if (!props) return null;
     const input = props as Record<string, any>;
     const out: Record<string, VertexPropertyType> = {};
@@ -218,11 +218,6 @@ export class Vertex {
 
       // Use keys as-is
       let key = rawKey;
-      if (rawKey === 'name' && explicitName !== undefined) {
-        // Explicit argument takes precedence
-        console.warn('newNamedChild: "name" in props is ignored because a name argument was provided');
-        continue;
-      }
 
       // Value normalization
       let value: any = rawValue;
