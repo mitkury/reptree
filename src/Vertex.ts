@@ -246,7 +246,7 @@ export class Vertex {
     }
 
     if (skipped.length > 0) {
-      console.warn(`Some fields were skipped due to unsupported types: ${skipped.join(', ')}`);
+      throw new Error(`Unsupported property types for keys: ${skipped.join(', ')}`);
     }
 
     return Object.keys(out).length > 0 ? out : null;

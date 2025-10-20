@@ -238,6 +238,32 @@ export class RepTree {
   }
 
   setTransientVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
+    // Validate JSON-serializable value (same rules as persistent)
+    const isJsonValue = (v: any): boolean => {
+      if (v === undefined) return true; // deletion signal
+      if (v === null) return true;
+      const t = typeof v;
+      if (t === 'string' || t === 'number' || t === 'boolean') return true;
+      if (t === 'bigint' || t === 'function' || t === 'symbol') return false;
+      if (Array.isArray(v)) return v.every(isJsonValue);
+      if (t === 'object') {
+        if (v instanceof Date) return false; // not allowed
+        if (v instanceof Map || v instanceof Set || v instanceof RegExp) return false;
+        if (ArrayBuffer.isView(v)) return false; // TypedArrays
+        const proto = Object.getPrototypeOf(v);
+        if (proto !== Object.prototype && proto !== null) return false;
+        for (const val of Object.values(v)) {
+          if (!isJsonValue(val)) return false;
+        }
+        return true;
+      }
+      return false;
+    };
+
+    if (!isJsonValue(value)) {
+      throw new Error(`Unsupported transient property value for key "${key}"`);
+    }
+
     this.lamportClock++;
     const op = newSetTransientVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, value as VertexPropertyType);
     this.localOps.push(op);
@@ -272,6 +298,32 @@ export class RepTree {
   }
 
   setVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
+    // Runtime validation for JSON-serializable values (undefined is allowed for deletion)
+    const isJsonValue = (v: any): boolean => {
+      if (v === undefined) return true; // deletion signal
+      if (v === null) return true;
+      const t = typeof v;
+      if (t === 'string' || t === 'number' || t === 'boolean') return true;
+      if (t === 'bigint' || t === 'function' || t === 'symbol') return false;
+      if (Array.isArray(v)) return v.every(isJsonValue);
+      if (t === 'object') {
+        if (v instanceof Date) return false; // disallow Date objects
+        if (v instanceof Map || v instanceof Set || v instanceof RegExp) return false;
+        if (ArrayBuffer.isView(v)) return false; // TypedArrays
+        const proto = Object.getPrototypeOf(v);
+        if (proto !== Object.prototype && proto !== null) return false;
+        for (const val of Object.values(v)) {
+          if (!isJsonValue(val)) return false;
+        }
+        return true;
+      }
+      return false;
+    };
+
+    if (!isJsonValue(value)) {
+      throw new Error(`Unsupported property value for key "${key}"`);
+    }
+
     this.lamportClock++;
     const op = newSetVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, value as VertexPropertyType);
     this.localOps.push(op);
