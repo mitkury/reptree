@@ -5,7 +5,7 @@
  * - Objects: only plain objects (Object.prototype or null prototype)
  * - No support for Date/Map/Set/RegExp/TypedArrays/etc. by design
  */
-export function deepEqual(a: any, b: any): boolean {
+export default function deepEqual(a: any, b: any): boolean {
   if (a === b) return true;
   if (a === null || b === null) return a === b;
 

@@ -12,10 +12,11 @@ import type { VertexPropertyType, TreeVertexProperty, VertexChangeEvent, TreeVer
 import { VertexState } from "./VertexState";
 import { TreeState } from "./TreeState";
 import { type OpId, compareOpId, equalsOpId, isOpIdGreaterThan, opIdToString } from "./OpId";
-import uuid from "./uuid";
+import uuid from "./utils/uuid";
 import { Vertex } from './Vertex';
 import { StateVector } from './StateVector';
-import { deepEqual } from './deepEqual';
+import deepEqual from './utils/deepEqual';
+import isJsonValue from './utils/isJsonValue';
 
 type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
 
@@ -77,6 +78,7 @@ export class RepTree {
   }
 
   get root(): Vertex | undefined {
+    // In case if the root was created from the ops (not explicitly), then we need to find it in the state.
     if (!this.rootVertexId) {
       const vertices = this.state.getAllVertices();
       for (const vertex of vertices) {
@@ -239,28 +241,6 @@ export class RepTree {
   }
 
   setTransientVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
-    // Validate JSON-serializable value (same rules as persistent)
-    const isJsonValue = (v: any): boolean => {
-      if (v === undefined) return true; // deletion signal
-      if (v === null) return true;
-      const t = typeof v;
-      if (t === 'string' || t === 'number' || t === 'boolean') return true;
-      if (t === 'bigint' || t === 'function' || t === 'symbol') return false;
-      if (Array.isArray(v)) return v.every(isJsonValue);
-      if (t === 'object') {
-        if (v instanceof Date) return false; // not allowed
-        if (v instanceof Map || v instanceof Set || v instanceof RegExp) return false;
-        if (ArrayBuffer.isView(v)) return false; // TypedArrays
-        const proto = Object.getPrototypeOf(v);
-        if (proto !== Object.prototype && proto !== null) return false;
-        for (const val of Object.values(v)) {
-          if (!isJsonValue(val)) return false;
-        }
-        return true;
-      }
-      return false;
-    };
-
     if (!isJsonValue(value)) {
       throw new Error(`Unsupported transient property value for key "${key}"`);
     }
@@ -748,8 +728,6 @@ export class RepTree {
       }
     }
   }
-
-  // Non-LWW modify-property flow removed
 
   private applyOperation(op: VertexOperation) {
     if (isMoveVertexOp(op)) {
