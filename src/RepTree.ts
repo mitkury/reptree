@@ -69,8 +69,8 @@ export class RepTree {
 
       // @TODO: validate the tree structure, throw an exception if it's invalid
     }
-    // @TODO: remove it? It creates an extra null vertex op in every new empty tree. Or is it ok?
     else {
+      // @TODO: consider to remove it. It creates an extra null vertex op in every new empty tree. We probably don't need to do it.
       this.ensureNullVertex();
     }
   }
@@ -256,7 +256,7 @@ export class RepTree {
     }
 
     const transientProps = vertex.getTransientProperties();
-    
+
     // Promote each transient property to persistent
     for (const prop of transientProps) {
       this.setVertexProperty(vertexId, prop.key, prop.value);
@@ -410,14 +410,14 @@ export class RepTree {
   isAncestor(childId: string, ancestorId: string | null): boolean {
     let targetId = childId;
     let vertex: VertexState | undefined;
-    
+
     // Set to track visited vertices and detect cycles
     const visitedVertices = new Set<string>();
 
     while (vertex = this.state.getVertex(targetId)) {
       if (vertex.parentId === ancestorId) return true;
       if (!vertex.parentId) return false;
-      
+
       // If we've already visited this vertex, we have a cycle
       if (visitedVertices.has(targetId)) {
         console.error(`isAncestor: cycle detected in the tree structure.`);
@@ -425,10 +425,10 @@ export class RepTree {
         // since the target ancestor isn't actually in the path (we're in a cycle)
         return false;
       }
-      
+
       // Mark this vertex as visited
       visitedVertices.add(targetId);
-      
+
       targetId = vertex.parentId;
     }
 
@@ -711,11 +711,11 @@ export class RepTree {
       // This is the last writer wins approach that ensures the same state between replicas.
       if (!prevOpId || isOpIdGreaterThan(op.id, prevOpId)) {
         this.setLLWPropertyAndItsOpId(op);
-              } else {
-          // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
-          // if we ever receive the same op from another peer.
-          this.knownOps.add(opIdToString(op.id));
-        }
+      } else {
+        // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
+        // if we ever receive the same op from another peer.
+        this.knownOps.add(opIdToString(op.id));
+      }
 
       // Remove the transient property if the current op is greater
       if (prevTransientOpId && isOpIdGreaterThan(op.id, prevTransientOpId)) {
