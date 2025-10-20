@@ -15,6 +15,7 @@ import { type OpId, compareOpId, equalsOpId, isOpIdGreaterThan, opIdToString } f
 import uuid from "./uuid";
 import { Vertex } from './Vertex';
 import { StateVector } from './StateVector';
+import { deepEqual } from './deepEqual';
 
 type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
 
@@ -532,41 +533,6 @@ export class RepTree {
   }
 
   static compareVertices(vertexId: string, treeA: RepTree, treeB: RepTree): boolean {
-    const deepEqual = (a: any, b: any): boolean => {
-      if (a === b) return true;
-      if (a === null || b === null) return a === b;
-      const ta = typeof a;
-      const tb = typeof b;
-      if (ta !== tb) return false;
-      if (ta !== 'object') return false;
-
-      // Arrays
-      const aIsArr = Array.isArray(a);
-      const bIsArr = Array.isArray(b);
-      if (aIsArr || bIsArr) {
-        if (!(aIsArr && bIsArr)) return false;
-        if (a.length !== b.length) return false;
-        for (let i = 0; i < a.length; i++) {
-          if (!deepEqual(a[i], b[i])) return false;
-        }
-        return true;
-      }
-
-      // Plain objects only
-      const aProto = Object.getPrototypeOf(a);
-      const bProto = Object.getPrototypeOf(b);
-      if ((aProto !== Object.prototype && aProto !== null) || (bProto !== Object.prototype && bProto !== null)) {
-        return false;
-      }
-      const aKeys = Object.keys(a);
-      const bKeys = Object.keys(b);
-      if (aKeys.length !== bKeys.length) return false;
-      for (const key of aKeys) {
-        if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
-        if (!deepEqual(a[key], b[key])) return false;
-      }
-      return true;
-    };
     const childrenA = treeA.state.getChildrenIds(vertexId);
     const childrenB = treeB.state.getChildrenIds(vertexId);
 
