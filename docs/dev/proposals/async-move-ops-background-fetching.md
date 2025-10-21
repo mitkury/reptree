@@ -14,11 +14,11 @@
 - Range-based `StateVector` to compute missing older ranges efficiently.
 
 ## Windowed state vector + offloaded ops
-- Keep only post-barrier ranges in the `StateVector`, and embed an optional `barrierByPeer: Record<peerId, counter>` inside the vector. Semantics: if a barrier is present for a peer, remotes MUST NOT send ops with counters ≤ barrier for that peer.
-- Opt-in granularity: omit `barrierByPeer` (globally or for specific peers) to allow full-history transfer, or temporarily lower a peer’s barrier to request selective backfill.
+- Keep only post-barrier ranges in the `StateVector`, and embed an optional `counterBarrier: Record<peerId, counter>` inside the vector. Semantics: if a counter barrier is present for a peer, remotes MUST NOT send ops with counters ≤ that barrier for that peer.
+- Opt-in granularity: omit `counterBarrier` (globally or for specific peers) to allow full-history transfer, or temporarily lower a peer’s counter barrier to request selective backfill.
 - Selective backfill: only when a provisional placement or an incoming op requires context outside the window, request minimal older ranges just enough to cover causal predecessors; stop as soon as the anchor resolves. Never reload full history by default.
-- Convergence/pruning: peers can gradually raise their barriers; a server may advertise a network-wide minimum. Once everyone’s effective barrier ≥ X, pre-X ops can be hard-pruned.
-- Eviction advances `barrierByPeer` as the window slides; persistence stores both post-barrier ranges and barriers for fast warm starts.
+- Convergence/pruning: peers can gradually raise their counter barriers; a server may advertise a network-wide minimum. Once everyone’s effective barrier ≥ X, pre-X ops can be hard-pruned.
+- Eviction advances `counterBarrier` as the window slides; persistence stores both post-barrier ranges and barriers for fast warm starts.
 
 ## Algorithm (happy path)
 1. Apply the move optimistically; if boundary encountered, place as oldest and tag provisional.
@@ -45,7 +45,7 @@
 
 ## Phased implementation
 1. Add OperationStore window + watermarks + provisional tagging.
-2. Introduce windowed vectors + `barrierByPeer` negotiation in sync envelopes.
+2. Introduce windowed vectors + `counterBarrier` negotiation in sync envelopes.
 3. Integrate `StateVector`-based selective backfill for older ranges.
 4. Engine changes: boundary-aware undo/do/redo and re-evaluation on merge.
 5. Persistence + tests (flicker, reorder, fetch failure, large trees; barrier advances; selective backfill limits).
