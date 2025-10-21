@@ -82,7 +82,7 @@ export class Vertex {
       throw new Error('Passing children inside props is not supported at the moment');
     }
 
-    const normalized = Vertex.normalizePropsForCreation(props, name);
+    const normalized = Vertex.normalizePropsForCreation(props);
     return this.tree.newNamedVertex(this.id, name, normalized);
   }
 
@@ -182,11 +182,30 @@ export class Vertex {
    * - Filters unsupported field types with a console warning
    * - When a name param is provided to newNamedChild, ignores conflicting name in props
    */
-  private static normalizePropsForCreation(props?: Record<string, VertexPropertyType> | object | null, explicitName?: string): Record<string, VertexPropertyType> | null {
+  private static normalizePropsForCreation(props?: Record<string, VertexPropertyType> | object | null): Record<string, VertexPropertyType> | null {
     if (!props) return null;
     const input = props as Record<string, any>;
     const out: Record<string, VertexPropertyType> = {};
     const skipped: string[] = [];
+
+    const isJsonValue = (v: any): v is VertexPropertyType => {
+      if (v === null) return true; // null is allowed
+      const t = typeof v;
+      if (t === 'string' || t === 'number' || t === 'boolean') return true;
+      if (Array.isArray(v)) return v.every(isJsonValue);
+      if (t === 'object') {
+        // Plain object with JSON-serializable values only
+        // Exclude Date, Map, Set, RegExp, etc.
+        const proto = Object.getPrototypeOf(v);
+        if (proto !== Object.prototype && proto !== null) return false;
+        for (const val of Object.values(v)) {
+          if (!isJsonValue(val)) return false;
+        }
+        return true;
+      }
+      // functions, symbols, undefined (handled separately), bigint
+      return false;
+    };
 
     for (const [rawKey, rawValue] of Object.entries(input)) {
       if (rawValue === undefined) {
@@ -199,11 +218,6 @@ export class Vertex {
 
       // Use keys as-is
       let key = rawKey;
-      if (rawKey === 'name' && explicitName !== undefined) {
-        // Explicit argument takes precedence
-        console.warn('newNamedChild: "name" in props is ignored because a name argument was provided');
-        continue;
-      }
 
       // Value normalization
       let value: any = rawValue;
@@ -218,19 +232,7 @@ export class Vertex {
         }
       }
 
-      const isPrimitive = (v: any) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
-
-      if (Array.isArray(value)) {
-        // Ensure array of primitives
-        if (!value.every(isPrimitive)) {
-          skipped.push(rawKey);
-          continue;
-        }
-      } else if (typeof value === 'object' && value !== null) {
-        // Unsupported nested object
-        skipped.push(rawKey);
-        continue;
-      } else if (!isPrimitive(value)) {
+      if (!isJsonValue(value)) {
         skipped.push(rawKey);
         continue;
       }
@@ -239,7 +241,7 @@ export class Vertex {
     }
 
     if (skipped.length > 0) {
-      console.warn(`Some fields were skipped due to unsupported types: ${skipped.join(', ')}`);
+      throw new Error(`Unsupported property types for keys: ${skipped.join(', ')}`);
     }
 
     return Object.keys(out).length > 0 ? out : null;

@@ -15,7 +15,7 @@ export class VertexState {
     this.children = [];
   }
 
-  setProperty(key: string, value: any): void {
+  setProperty(key: string, value: VertexPropertyType): void {
     const existingPropIndex = this.properties.findIndex(p => p.key === key);
     if (existingPropIndex !== -1) {
       if (value !== undefined) {
@@ -33,7 +33,7 @@ export class VertexState {
     }
   }
 
-  setTransientProperty(key: string, value: any): void {
+  setTransientProperty(key: string, value: VertexPropertyType): void {
     const existingPropIndex = this.transientProperties.findIndex(p => p.key === key);
     if (existingPropIndex !== -1) {
       if (value !== undefined) {

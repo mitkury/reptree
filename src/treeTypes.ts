@@ -2,13 +2,11 @@ import { VertexState } from "./VertexState";
 
 export type TreeVertexId = string;
 
-/**
- * Serializable CRDT data for operations
- */
-// Only LWW primitives are supported.
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
-/** Property type for state */
-export type VertexPropertyType = string | number | boolean | string[] | number[] | boolean[] | undefined;
+/** Property type for state (undefined means removal) */
+export type VertexPropertyType = JsonValue | undefined;
 
 export type TreeVertexProperty = {
   readonly key: string;

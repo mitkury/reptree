@@ -110,7 +110,7 @@ describe('bindVertex reactive wrapper', () => {
     expect(createdAt).toBe(now.toISOString());
   });
 
-  test('newChild props normalization and type filtering', () => {
+  test('newChild props normalization allows JSON-serializable values', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
 
@@ -119,8 +119,8 @@ describe('bindVertex reactive wrapper', () => {
       _c: '2024-01-01T00:00:00.000Z',
       age: 5,
       flags: [true, false],
-      badObj: { nested: true } as any,
-      badArr: [1, { x: 1 }] as any,
+      obj: { nested: true } as any,
+      mixedArr: [1, { x: 1 }] as any,
       undef: undefined,
     } as any);
 
@@ -128,8 +128,8 @@ describe('bindVertex reactive wrapper', () => {
     expect(child.getProperty('_c')).toBe('2024-01-01T00:00:00.000Z');
     expect(child.getProperty('age')).toBe(5);
     expect(child.getProperty('flags')).toEqual([true, false]);
-    expect(child.getProperty('badObj')).toBeUndefined();
-    expect(child.getProperty('badArr')).toBeUndefined();
+    expect(child.getProperty('obj')).toEqual({ nested: true });
+    expect(child.getProperty('mixedArr')).toEqual([1, { x: 1 }]);
     expect(child.getProperty('undef')).toBeUndefined();
   });
 

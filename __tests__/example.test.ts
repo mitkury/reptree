@@ -66,8 +66,7 @@ describe('examples should work', () => {
     logoFile.setProperties({
       type: "file",
       size: 15360,
-      dimensions: "512x512",
-      format: "png",
+      meta: { dimensions: "512x512", format: "png" },
       s3Path: "s3://my-bucket/images/logo.png",
     });
 
@@ -76,6 +75,9 @@ describe('examples should work', () => {
 
     // Get children of a folder
     const docsFolderContents = docsFolder.children;
+
+    // JSON prop checks
+    expect(logoFile.getProperty('meta')).toEqual({ dimensions: '512x512', format: 'png' });
 
     // Syncing between trees
     const otherTree = new RepTree("peer2");

@@ -13,7 +13,12 @@ describe('LWW Properties', () => {
     }
 
     // Verify final value
-    expect(root.getProperty(propertyName)).toBe(expectedFinalValue);
+    const finalValue = root.getProperty(propertyName);
+    if (expectedFinalValue !== null && typeof expectedFinalValue === 'object') {
+      expect(finalValue).toStrictEqual(expectedFinalValue);
+    } else {
+      expect(finalValue).toBe(expectedFinalValue);
+    }
 
     // Test with operations in reverse order
     const reversedOps = [...tree.getAllOps()].reverse();
@@ -23,7 +28,12 @@ describe('LWW Properties', () => {
     expect(rootFromDuplicateTree).not.toBeUndefined();
     
     if (rootFromDuplicateTree) {
-      expect(rootFromDuplicateTree.getProperty(propertyName)).toBe(expectedFinalValue);
+      const dupValue = rootFromDuplicateTree.getProperty(propertyName);
+      if (expectedFinalValue !== null && typeof expectedFinalValue === 'object') {
+        expect(dupValue).toStrictEqual(expectedFinalValue);
+      } else {
+        expect(dupValue).toBe(expectedFinalValue);
+      }
     }
   }
 
@@ -37,5 +47,13 @@ describe('LWW Properties', () => {
 
   test('should handle string properties with LWW semantics', () => {
     testPropertyType('name', ['one', 'two', 'three', 'four'], 'four');
+  });
+
+  test('should handle array properties with LWW semantics', () => {
+    testPropertyType('tags', [[], ['a'], ['a','b'], ['x','y','z']], ['x','y','z']);
+  });
+
+  test('should handle object properties with LWW semantics', () => {
+    testPropertyType('meta', [{}, {a:1}, {a:1,b:2}, {nested:{x:1}}], {nested:{x:1}});
   });
 });

@@ -33,9 +33,10 @@ const qa = company.newNamedChild("qa");
 // Create a vertex in another vertex
 const alice = qa.newChild();
 
-// Set properties
+// Set properties (supports any JSON-serializable values)
 alice.setProperty("name", "Alice");
 alice.setProperty("age", 32);
+alice.setProperty("meta", { department: "QA", skills: ["cypress", "playwright"], flags: { lead: false } });
 
 // Move the vertex inside a different vertex
 alice.moveTo(devs);
@@ -89,8 +90,7 @@ const logoFile = imagesFolder.newNamedChild("logo.png");
 logoFile.setProperties({
   type: "file",
   size: 15360,
-  dimensions: "512x512",
-  format: "png",
+  meta: { dimensions: "512x512", format: "png" },
   s3Path: "s3://my-bucket/images/logo.png",
 });
 

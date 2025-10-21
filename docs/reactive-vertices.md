@@ -15,6 +15,7 @@ const person = v.bind();
 
 person.name = 'Alice'; // persisted to CRDT
 person.age = 33;       // persisted to CRDT
+person.meta = { nested: { a: 1 }, list: [1, 2, { b: true }] }; // JSON-serializable supported
 
 // If updates arrive from other peers, reads reflect the latest state
 console.log(person.name); // 'Alice'
@@ -110,6 +111,7 @@ const person = v.bind(Person);
 person.$useTransients(p => {
   p.name = 'Alice (draft)';   // transient overlay
   p.age = 34;                 // transient overlay
+  p.meta = { draft: true, arr: [1, { x: 2 }] };
 });
 
 console.log(person.name); // 'Alice (draft)' — reads include transients

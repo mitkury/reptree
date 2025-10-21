@@ -1,4 +1,4 @@
-import type { TreeVertexId, VertexChangeEvent, VertexPropertyChangeEvent, VertexChildrenChangeEvent, VertexMoveEvent } from "./treeTypes";
+import type { TreeVertexId, VertexChangeEvent, VertexPropertyChangeEvent, VertexChildrenChangeEvent, VertexMoveEvent, VertexPropertyType } from "./treeTypes";
 import { VertexState } from "./VertexState";
 
 export class TreeState {
@@ -149,7 +149,7 @@ export class TreeState {
     return vertex;
   }
 
-  setProperty(vertexId: string, key: string, value: any) {
+  setProperty(vertexId: string, key: string, value: VertexPropertyType) {
     const vertex = this.getVertex(vertexId);
     if (!vertex) {
       throw new Error(`Vertex ${vertexId} not found`);
@@ -173,7 +173,7 @@ export class TreeState {
     }
   }
 
-  setTransientProperty(vertexId: string, key: string, value: any) {
+  setTransientProperty(vertexId: string, key: string, value: VertexPropertyType) {
     const vertex = this.getVertex(vertexId);
     if (vertex) {
       vertex.setTransientProperty(key, value);
