@@ -14,9 +14,10 @@
 - Range-based `StateVector` to compute missing older ranges efficiently.
 
 ## Windowed state vector + offloaded ops
-- Keep only post-barrier ranges in the `StateVector`; track `barrierByPeer: Record<peerId, counter>` indicating a fully-covered prefix `[1..barrier]` that was offloaded.
-- Sync envelope includes `{ stateVectorPostBarrier, barrierByPeer }`. Peers must not send pre-barrier ops unless explicitly requested.
-- Selective backfill: only when a provisional placement or an incoming op requires context outside the window, request minimal older ranges just enough to cover the causal predecessors; stop as soon as the anchor resolves. Never reload full history by default.
+- Keep only post-barrier ranges in the `StateVector`, and embed an optional `barrierByPeer: Record<peerId, counter>` inside the vector. Semantics: if a barrier is present for a peer, remotes MUST NOT send ops with counters ≤ barrier for that peer.
+- Opt-in granularity: omit `barrierByPeer` (globally or for specific peers) to allow full-history transfer, or temporarily lower a peer’s barrier to request selective backfill.
+- Selective backfill: only when a provisional placement or an incoming op requires context outside the window, request minimal older ranges just enough to cover causal predecessors; stop as soon as the anchor resolves. Never reload full history by default.
+- Convergence/pruning: peers can gradually raise their barriers; a server may advertise a network-wide minimum. Once everyone’s effective barrier ≥ X, pre-X ops can be hard-pruned.
 - Eviction advances `barrierByPeer` as the window slides; persistence stores both post-barrier ranges and barriers for fast warm starts.
 
 ## Algorithm (happy path)
