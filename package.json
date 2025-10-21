@@ -1,6 +1,6 @@
 {
   "name": "reptree",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "A tree data structure using CRDTs for seamless replication between peers",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -50,7 +50,5 @@
     "vitest": "^1.0.0",
     "zod": "^4.0.0"
   },
-  "dependencies": {
-    
-  }
+  "dependencies": {}
 }
