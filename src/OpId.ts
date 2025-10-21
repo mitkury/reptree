@@ -1,3 +1,8 @@
+/**
+ * An identifier for an operation. We use them to compare and order operations.
+ * It uses a counter as a Lamport clock and a peer ID in case if ops have the same counter - in that case the ops will be compared by peer ID.
+ * Lamport clock (Lamport timestamp): https://en.wikipedia.org/wiki/Lamport_timestamp
+ */
 export interface OpId {
   readonly counter: number;
   readonly peerId: string;
@@ -7,6 +12,12 @@ export function createOpId(counter: number, peerId: string): OpId {
   return { counter, peerId };
 }
 
+/**
+ * Compares two operation IDs.
+ * @param opIdA - The first operation ID.
+ * @param opIdB - The second operation ID.
+ * @returns 1 if opIdA is greater than opIdB, -1 if opIdA is less than opIdB, 0 if they are equal.
+ */
 export function compareOpId(opIdA: OpId | string, opIdB: OpId | string): number {
   if (typeof opIdA === 'string') {
     const parsedA = tryParseOpIdStr(opIdA);
@@ -27,6 +38,8 @@ export function compareOpId(opIdA: OpId | string, opIdB: OpId | string): number 
   } else if (counterA < counterB) {
     return -1;
   } else {
+    // If the counters are equal, compare the peer IDs.
+    // So it's always possible to deterministically order the ops.
     return opIdA.peerId.localeCompare(opIdB.peerId);
   }
 }
