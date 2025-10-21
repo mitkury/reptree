@@ -13,6 +13,12 @@
 - Provisional flags per op/vertex (e.g., position provisional until a counter/watermark).
 - Range-based `StateVector` to compute missing older ranges efficiently.
 
+## Windowed state vector + offloaded ops
+- Keep only post-barrier ranges in the `StateVector`; track `barrierByPeer: Record<peerId, counter>` indicating a fully-covered prefix `[1..barrier]` that was offloaded.
+- Sync envelope includes `{ stateVectorPostBarrier, barrierByPeer }`. Peers must not send pre-barrier ops unless explicitly requested.
+- Selective backfill: only when a provisional placement or an incoming op requires context outside the window, request minimal older ranges just enough to cover the causal predecessors; stop as soon as the anchor resolves. Never reload full history by default.
+- Eviction advances `barrierByPeer` as the window slides; persistence stores both post-barrier ranges and barriers for fast warm starts.
+
 ## Algorithm (happy path)
 1. Apply the move optimistically; if boundary encountered, place as oldest and tag provisional.
 2. Background fetch: compare local `StateVector` to server; request missing older ranges.
@@ -38,6 +44,7 @@
 
 ## Phased implementation
 1. Add OperationStore window + watermarks + provisional tagging.
-2. Integrate `StateVector`-based fetcher for older ranges.
-3. Engine changes: boundary-aware undo/do/redo and re-evaluation on merge.
-4. Persistence + tests (flicker, reorder, fetch failure, large trees).
+2. Introduce windowed vectors + `barrierByPeer` negotiation in sync envelopes.
+3. Integrate `StateVector`-based selective backfill for older ranges.
+4. Engine changes: boundary-aware undo/do/redo and re-evaluation on merge.
+5. Persistence + tests (flicker, reorder, fetch failure, large trees; barrier advances; selective backfill limits).
