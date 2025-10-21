@@ -2,11 +2,6 @@ import { VertexState } from "./VertexState";
 
 export type TreeVertexId = string;
 
-/**
- * Serializable CRDT data for operations
- */
-// JSON-serializable values are supported (plus `undefined` to indicate deletion)
-
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
