@@ -46,6 +46,8 @@ Notes:
 - `stateVector` uses range format per `docs/vector-states.md`.
 - `counterBarrier` is optional and supports the windowed/backfill protocol described in `async-move-ops-background-fetching.md`.
 - `childrenIds` are optional; loader can rebuild from `parentId` if absent.
+- Persist only non‑transient properties in `props`; do not include transient overlays.
+- Root semantics: root is any vertex with `parentId: null` and `id !== "0"`; `rootId` is a convenience field.
 
 ### Storage model
 
@@ -68,11 +70,13 @@ Notes:
 - GET `state/<treeId>/current.json`
 - Initialize `RepTree` from `vertices`, `parentId`, `props`
 - Install `stateVector` and optional `counterBarrier`
+  - Ensure the special null vertex (id `"0"`) exists in memory before applying any ops that might delete/move to null. If the state did not include it, create it eagerly.
+  - Restore local Lamport clock from `stateVector`: set it to the max counter observed for the current peer (to avoid counter reuse when this peer generates new ops).
 
 2) Apply latest N ops
 - Query DynamoDB: `treeId`, ScanIndexForward=false, `Limit=N`
-- Reverse to chronological order and apply
-- Skip ops whose `id` is already covered by `stateVector`; update vector as you apply
+- Sort by OpId ascending if available (peerId + counter); otherwise reverse to chronological order and apply
+- Skip ops whose `id` is already contained in `stateVector`; apply only missing, updating the vector incrementally
 
 3) Background backfill (on demand)
 - If a move requires pre‑barrier context, mark placement provisional and fetch missing older ranges
@@ -90,6 +94,17 @@ Notes:
 - `counterBarrier` aligns with the proposal’s windowed vector; loaders treat placements that need pre‑barrier history as provisional
 - Backfill uses `StateVector.diff` semantics to fetch only missing ranges
 - No API changes to `moveTo`; DX remains synchronous
+
+### Implementation notes from current code
+
+- Tree construction: the engine stores structure in `TreeState` as `VertexState{id, parentId, children, properties}`. Hydration can be performed by calling a dedicated loader inside the library that:
+  - Materializes all vertices (using `TreeState.moveVertex(id, parentId)`) without generating local ops
+  - Writes persistent `props` directly into the underlying `VertexState` (bypassing transient overlays)
+  - Installs the provided `stateVector` as-is
+  - Sets the Lamport clock to the max counter for the local peer from `stateVector`
+- Transients: do not serialize transient properties; they are UI overlays and should not be present in state.
+- Null vertex: moves to null use parent id `"0"`. Ensure `"0"` exists during load so later delete/move ops don’t get stuck as "pending moves with missing parent".
+- Children order: `TreeState.getChildren` sorts for reads; `childrenIds` in the state is optional and used only to speed up load.
 
 ### Minimal helpers (sketch)
 
