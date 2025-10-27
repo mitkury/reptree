@@ -75,7 +75,7 @@ Notes:
 
 2) Apply latest N ops
 - Query DynamoDB: `treeId`, ScanIndexForward=false, `Limit=N`
-- Sort by OpId ascending if available (peerId + counter); otherwise reverse to chronological order and apply
+- Sort by OpId ascending (peerId + counter) before applying
 - Skip ops whose `id` is already contained in `stateVector`; apply only missing, updating the vector incrementally
 
 3) Background backfill (on demand)
