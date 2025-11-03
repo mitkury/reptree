@@ -38,7 +38,6 @@ export class RepTree {
   private setPropertyOps: SetVertexProperty[] = [];
   private propertiesAndTheirOpIds: Map<PropertyKeyAtVertexId, OpId> = new Map();
   private transientPropertiesAndTheirOpIds: Map<PropertyKeyAtVertexId, OpId> = new Map();
-  // Observers for non-structural properties are not used
   private localOps: VertexOperation[] = [];
   private pendingMovesWithMissingParent: Map<string, MoveVertex[]> = new Map();
   private pendingPropertiesWithMissingVertex: Map<string, SetVertexProperty[]> = new Map();
@@ -134,6 +133,7 @@ export class RepTree {
     return this.state.getChildrenIds(vertexId);
   }
 
+  /** Returns the ancestors of the given vertex. The first element is the root vertex. */
   getAncestors(vertexId: string): Vertex[] {
     const ancestors: Vertex[] = [];
     let currentVertex = this.state.getVertex(vertexId);
