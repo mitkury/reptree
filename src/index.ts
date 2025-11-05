@@ -5,7 +5,7 @@ export { RepTree } from './RepTree';
 export { Vertex } from './Vertex';
 export { VertexState } from './VertexState';
 export { TreeState } from './TreeState';
-export { OpId } from './OpId';
+export * from './OpId';
 export { StateVector } from './StateVector';
 
 // Types
