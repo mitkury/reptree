@@ -1,4 +1,6 @@
-# Collaborative Virtual File System
+# RepFS: Collaborative Virtual File System
+
+RepFS is a local-first, CRDT-backed virtual filesystem kernel, embeddable in any JS runtime, with built-in replication, permissions, and time-travel.
 
 ## Summary
 - Build a standalone, CRDT-backed virtual file system (VFS) that any project can embed to provide multiplayer folder hierarchies, file metadata, and collaborative document editing.
