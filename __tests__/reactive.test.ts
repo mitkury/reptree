@@ -133,7 +133,7 @@ describe('bindVertex reactive wrapper', () => {
     expect(child.getProperty('undef')).toBeUndefined();
   });
 
-  test('newNamedChild ignores props.name in favor of explicit name and forbids nested children', () => {
+  test('newNamedChild ignores props.name in favor of explicit name and allows children as property', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
 
@@ -141,8 +141,12 @@ describe('bindVertex reactive wrapper', () => {
     expect(child.getProperty('name')).toBe('Explicit');
     expect(child.getProperty('age')).toBe(1);
 
-    expect(() => root.newChild({ children: [] } as any)).toThrowError();
-    expect(() => root.newNamedChild('X', { children: [] } as any)).toThrowError();
+    // 'children' can be a regular property, separate from the tree structure
+    const childWithChildrenProp = root.newChild({ children: ['a', 'b'] } as any);
+    expect(childWithChildrenProp.getProperty('children')).toEqual(['a', 'b']);
+    
+    const namedChildWithChildrenProp = root.newNamedChild('X', { children: ['x', 'y'] } as any);
+    expect(namedChildWithChildrenProp.getProperty('children')).toEqual(['x', 'y']);
   });
 
   test('whole-object validation uses direct keys', () => {
