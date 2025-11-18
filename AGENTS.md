@@ -37,9 +37,10 @@ const qa = company.newNamedChild("qa");
 // Create a vertex in another vertex
 const alice = qa.newChild();
 
-// Set properties
+// Set properties (supports any JSON-serializable values)
 alice.setProperty("name", "Alice");
 alice.setProperty("age", 32);
+alice.setProperty("meta", { department: "QA", skills: ["cypress", "playwright"], flags: { lead: false } });
 
 // Move the vertex inside a different vertex
 alice.moveTo(devs);
@@ -93,8 +94,7 @@ const logoFile = imagesFolder.newNamedChild("logo.png");
 logoFile.setProperties({
   type: "file",
   size: 15360,
-  dimensions: "512x512",
-  format: "png",
+  meta: { dimensions: "512x512", format: "png" },
   s3Path: "s3://my-bucket/images/logo.png",
 });
 
@@ -156,7 +156,7 @@ bench - anything related to benchmarks
 
 {
   "name": "reptree",
-  "version": "0.6.0",
+  "version": "0.8.2",
   "description": "A tree data structure using CRDTs for seamless replication between peers",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -174,7 +174,7 @@ bench - anything related to benchmarks
     "README.md"
   ],
   "scripts": {
-    "preinstall": "airul gen",
+    "prepare": "npx airul gen",
     "prebuild": "rm -rf dist",
     "build": "tsup",
     "dev": "tsup --watch",
@@ -206,9 +206,7 @@ bench - anything related to benchmarks
     "vitest": "^1.0.0",
     "zod": "^4.0.0"
   },
-  "dependencies": {
-    
-  }
+  "dependencies": {}
 }
 ---
 
@@ -305,6 +303,7 @@ const person = v.bind();
 
 person.name = 'Alice'; // persisted to CRDT
 person.age = 33;       // persisted to CRDT
+person.meta = { nested: { a: 1 }, list: [1, 2, { b: true }] }; // JSON-serializable supported
 
 // If updates arrive from other peers, reads reflect the latest state
 console.log(person.name); // 'Alice'
@@ -400,6 +399,7 @@ const person = v.bind(Person);
 person.$useTransients(p => {
   p.name = 'Alice (draft)';   // transient overlay
   p.age = 34;                 // transient overlay
+  p.meta = { draft: true, arr: [1, { x: 2 }] };
 });
 
 console.log(person.name); // 'Alice (draft)' — reads include transients
