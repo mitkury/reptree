@@ -313,7 +313,7 @@ export function syncWithStateVectors(trees: RepTree[]): number {
   let totalTransferred = 0;
   
   // Get all trees' state vectors first
-  const stateVectors = trees.map(tree => tree.getStateVector());
+  const stateVectors = trees.map(tree => tree.getStateVectors());
   
   // For each tree, calculate and apply missing ops from all other trees
   for (let i = 0; i < treeCount; i++) {

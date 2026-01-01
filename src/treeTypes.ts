@@ -46,3 +46,7 @@ export interface OpIdRange {
   end: number;
 }
 
+export type StateVectors = {
+  move: Record<string, number[][]>;
+  prop: Record<string, number[][]>;
+};

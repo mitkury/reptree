@@ -34,7 +34,7 @@ describe('RepTree Synchronization Operations', () => {
     
     // Benchmark state vector operations
     for (let i = 0; i < 100; i++) {
-      tree.getStateVector();
+      tree.getStateVectors();
     }
   });
 
@@ -62,7 +62,7 @@ describe('RepTree Synchronization Operations', () => {
     }
     
     // Get state vectors
-    const stateVectorA = treeA.getStateVector();
+    const stateVectorA = treeA.getStateVectors();
     
     // Benchmark missing operations calculation
     if (stateVectorA) {

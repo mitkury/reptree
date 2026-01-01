@@ -8,7 +8,7 @@ import {
   newSetTransientVertexPropertyOp,
   isAnyPropertyOp
 } from "./operations";
-import type { VertexPropertyType, TreeVertexProperty, VertexChangeEvent, TreeVertexId, VertexMoveEvent } from "./treeTypes";
+import type { VertexPropertyType, TreeVertexProperty, VertexChangeEvent, TreeVertexId, VertexMoveEvent, StateVectors } from "./treeTypes";
 import { VertexState } from "./VertexState";
 import { TreeState } from "./TreeState";
 import { type OpId, compareOpId, equalsOpId, isOpIdGreaterThan, opIdToString } from "./OpId";
@@ -32,11 +32,11 @@ export class RepTree {
   readonly peerId: string;
   private rootVertexId: string | undefined;
 
-  private lamportClock = 0;
+  private moveClock = 0;
+  private propClock = 0;
   private state: TreeState;
   private moveOps: MoveVertex[] = [];
-  private setPropertyOps: SetVertexProperty[] = [];
-  private propertiesAndTheirOpIds: Map<PropertyKeyAtVertexId, OpId> = new Map();
+  private propertyOpsByKey: Map<PropertyKeyAtVertexId, SetVertexProperty> = new Map();
   private transientPropertiesAndTheirOpIds: Map<PropertyKeyAtVertexId, OpId> = new Map();
   private localOps: VertexOperation[] = [];
   private pendingMovesWithMissingParent: Map<string, MoveVertex[]> = new Map();
@@ -46,7 +46,8 @@ export class RepTree {
   private opAppliedCallbacks: ((op: VertexOperation) => void)[] = [];
 
   // State vector tracking operations from each peer
-  private stateVector: StateVector;
+  private moveStateVector: StateVector;
+  private propStateVector: StateVector;
   private _stateVectorEnabled: boolean = true;
 
   /**
@@ -58,7 +59,8 @@ export class RepTree {
     this.state = new TreeState();
 
     // Initialize state vector (enabled by default)
-    this.stateVector = new StateVector();
+    this.moveStateVector = new StateVector();
+    this.propStateVector = new StateVector();
 
     if (ops && ops.length > 0) {
       this.applyOps(ops);
@@ -107,7 +109,7 @@ export class RepTree {
   }
 
   getAllOps(): ReadonlyArray<VertexOperation> {
-    return [...this.moveOps, ...this.setPropertyOps];
+    return [...this.moveOps, ...this.getPropertyOps()];
   }
 
   getVertex(vertexId: string): Vertex | undefined {
@@ -230,8 +232,8 @@ export class RepTree {
   }
 
   moveVertex(vertexId: string, parentId: string) {
-    this.lamportClock++;
-    const op = newMoveVertexOp(this.lamportClock, this.peerId, vertexId, parentId);
+    this.moveClock++;
+    const op = newMoveVertexOp(this.moveClock, this.peerId, vertexId, parentId);
     this.localOps.push(op);
     this.applyMove(op);
   }
@@ -245,8 +247,8 @@ export class RepTree {
       throw new Error(`Unsupported transient property value for key "${key}"`);
     }
 
-    this.lamportClock++;
-    const op = newSetTransientVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, value as VertexPropertyType);
+    this.propClock++;
+    const op = newSetTransientVertexPropertyOp(this.propClock, this.peerId, vertexId, key, value as VertexPropertyType);
     this.localOps.push(op);
     this.applyProperty(op);
   }
@@ -305,8 +307,8 @@ export class RepTree {
       throw new Error(`Unsupported property value for key "${key}"`);
     }
 
-    this.lamportClock++;
-    const op = newSetVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, value as VertexPropertyType);
+    this.propClock++;
+    const op = newSetVertexPropertyOp(this.propClock, this.peerId, vertexId, key, value as VertexPropertyType);
     this.localOps.push(op);
     this.applyProperty(op);
   }
@@ -376,10 +378,21 @@ export class RepTree {
   }
 
   private applyOps(ops: ReadonlyArray<VertexOperation>) {
-    for (const op of ops) {
+    const moveOps = ops.filter(op => isMoveVertexOp(op));
+    const propertyOps = ops.filter(op => isAnyPropertyOp(op));
+
+    for (const op of moveOps) {
       // We skip the operation if we already know about it.
       // This is to avoid processing the same operation multiple times.
-      if (this.knownOps.has(opIdToString(op.id))) {
+      if (this.knownOps.has(this.getOpKey(op))) {
+        continue;
+      }
+
+      this.applyOperation(op);
+    }
+
+    for (const op of propertyOps) {
+      if (this.knownOps.has(this.getOpKey(op))) {
         continue;
       }
 
@@ -389,7 +402,7 @@ export class RepTree {
 
   /** Applies operations in an optimized way, sorting move ops by OpId to avoid undo-do-redo cycles */
   private applyOpsOptimizedForLotsOfMoves(ops: ReadonlyArray<VertexOperation>) {
-    const newMoveOps = ops.filter(op => isMoveVertexOp(op) && !this.knownOps.has(opIdToString(op.id)));
+    const newMoveOps = ops.filter(op => isMoveVertexOp(op) && !this.knownOps.has(this.getOpKey(op)));
     if (newMoveOps.length > 0) {
       // Get an array of all move ops (without already applied ones)
       const allMoveOps = [...this.moveOps, ...newMoveOps] as MoveVertex[];
@@ -403,7 +416,7 @@ export class RepTree {
     }
 
     // Get an array of all property ops (without already applied ones)
-    const propertyOps = ops.filter(op => isAnyPropertyOp(op) && !this.knownOps.has(opIdToString(op.id)));
+    const propertyOps = ops.filter(op => isAnyPropertyOp(op) && !this.knownOps.has(this.getOpKey(op)));
     for (let i = 0, len = propertyOps.length; i < len; i++) {
       const op = propertyOps[i];
       this.applyProperty(op as SetVertexProperty);
@@ -551,10 +564,10 @@ export class RepTree {
   }
 
   private newVertexInternal(vertexId: string, parentId: string | null): string {
-    this.lamportClock++;
+    this.moveClock++;
     // To create a vertex - we move a vertex with a fresh id under the parent.
     // No need to have a separate "create vertex" operation.
-    const op = newMoveVertexOp(this.lamportClock, this.peerId, vertexId, parentId);
+    const op = newMoveVertexOp(this.moveClock, this.peerId, vertexId, parentId);
     this.localOps.push(op);
     this.applyMove(op);
 
@@ -581,10 +594,16 @@ export class RepTree {
   }
 
   /** Updates the lamport clock with the counter value of the operation */
-  private updateLamportClock(operation: VertexOperation): void {
+  private updateMoveClock(operation: MoveVertex): void {
     // This is how Lamport clock updates with a foreign operation that has a greater counter value.
-    if (operation.id.counter > this.lamportClock) {
-      this.lamportClock = operation.id.counter;
+    if (operation.id.counter > this.moveClock) {
+      this.moveClock = operation.id.counter;
+    }
+  }
+
+  private updatePropClock(operation: SetVertexProperty): void {
+    if (operation.id.counter > this.propClock) {
+      this.propClock = operation.id.counter;
     }
   }
 
@@ -614,10 +633,11 @@ export class RepTree {
         this.pendingMovesWithMissingParent.set(op.parentId, []);
       }
       this.pendingMovesWithMissingParent.get(op.parentId)!.push(op);
+      this.markOpSeen(op, true);
       return;
     }
 
-    this.updateLamportClock(op);
+    this.updateMoveClock(op);
 
     const lastOp = this.moveOps.length > 0 ? this.moveOps[this.moveOps.length - 1] : null;
 
@@ -665,15 +685,16 @@ export class RepTree {
   }
 
   private setLLWPropertyAndItsOpId(op: SetVertexProperty) {
-    this.propertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
+    this.propertyOpsByKey.set(`${op.key}@${op.targetId}`, op);
     this.state.setProperty(op.targetId, op.key, op.value);
-    this.reportOpAsApplied(op);
+    this.reportOpAsApplied(op, false);
+    this.refreshPropStateVector();
   }
 
   private setTransientPropertyAndItsOpId(op: SetVertexProperty) {
     this.transientPropertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
     this.state.setTransientProperty(op.targetId, op.key, op.value);
-    this.reportOpAsApplied(op);
+    this.reportOpAsApplied(op, false);
   }
 
   private applyProperty(op: SetVertexProperty) {
@@ -690,29 +711,26 @@ export class RepTree {
         this.pendingPropertiesWithMissingVertex.set(op.targetId, []);
       }
       this.pendingPropertiesWithMissingVertex.get(op.targetId)!.push(op);
+      this.markOpSeen(op, false);
       return;
     }
 
-    this.updateLamportClock(op);
+    this.updatePropClock(op);
 
     this.applyLLWProperty(op, targetVertex);
   }
 
   private applyLLWProperty(op: SetVertexProperty, targetVertex: VertexState) {
     const prevTransientOpId = this.transientPropertiesAndTheirOpIds.get(`${op.key}@${op.targetId}`);
-    const prevOpId = this.propertiesAndTheirOpIds.get(`${op.key}@${op.targetId}`);
+    const prevOpId = this.propertyOpsByKey.get(`${op.key}@${op.targetId}`)?.id;
 
     if (!op.transient) {
-      this.setPropertyOps.push(op);
-
       // Apply the property if it's not already applied or if the current op is newer
       // This is the last writer wins approach that ensures the same state between replicas.
       if (!prevOpId || isOpIdGreaterThan(op.id, prevOpId)) {
         this.setLLWPropertyAndItsOpId(op);
       } else {
-        // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
-        // if we ever receive the same op from another peer.
-        this.knownOps.add(opIdToString(op.id));
+        this.markOpSeen(op, false);
       }
 
       // Remove the transient property if the current op is greater
@@ -725,6 +743,8 @@ export class RepTree {
       // Handle transient properties
       if (!prevTransientOpId || isOpIdGreaterThan(op.id, prevTransientOpId)) {
         this.setTransientPropertyAndItsOpId(op);
+      } else {
+        this.markOpSeen(op, false);
       }
     }
   }
@@ -737,12 +757,20 @@ export class RepTree {
     }
   }
 
-  private reportOpAsApplied(op: VertexOperation) {
-    this.knownOps.add(opIdToString(op.id));
+  private markOpSeen(op: VertexOperation, includeInStateVector: boolean) {
+    this.knownOps.add(this.getOpKey(op));
 
-    if (this._stateVectorEnabled) {
-      this.stateVector.updateFromOp(op);
+    if (includeInStateVector && this._stateVectorEnabled) {
+      if (isMoveVertexOp(op)) {
+        this.moveStateVector.updateFromOp(op);
+      } else if (isAnyPropertyOp(op)) {
+        this.propStateVector.updateFromOp(op);
+      }
     }
+  }
+
+  private reportOpAsApplied(op: VertexOperation, includeInStateVector: boolean = true) {
+    this.markOpSeen(op, includeInStateVector);
 
     for (const callback of this.opAppliedCallbacks) {
       callback(op);
@@ -795,56 +823,49 @@ export class RepTree {
   // --- Range-Based State Vector Methods --- 
 
   /**
-   * Returns the current state vector.
-   * Returns a readonly reference to the internal state vector.
+   * Returns the current state vectors for move and property streams.
+   * Returns readonly references to the internal state vectors.
    */
-  getStateVector(): Readonly<Record<string, number[][]>> | null {
+  getStateVectors(): { move: Readonly<StateVectors["move"]>; prop: Readonly<StateVectors["prop"]> } | null {
     if (!this._stateVectorEnabled) {
       return null;
     }
-    return this.stateVector.getState();
+    return {
+      move: this.moveStateVector.getState(),
+      prop: this.propStateVector.getState(),
+    };
   }
 
   /**
    * Determines which operations are needed to synchronize 
    * with the provided state vector.
    * 
-   * @param theirStateVector The state vector from another peer
-   * @returns Operations that should be sent to the other peer, sorted by OpId.
+   * @param theirStateVectors The state vectors from another peer
+   * @returns Operations that should be sent to the other peer, sorted by OpId within each stream.
    */
-  getMissingOps(theirStateVector: Record<string, number[][]>): VertexOperation[] {
+  getMissingOps(theirStateVectors: StateVectors): VertexOperation[] {
     // If state vector is disabled, fallback to sending all ops
     if (!this._stateVectorEnabled) {
-      return [...this.moveOps, ...this.setPropertyOps];
+      return [...this.moveOps, ...this.getPropertyOps()];
     }
 
     // Create a StateVector instance from their state vector
-    const otherStateVector = new StateVector(theirStateVector);
+    const otherMoveStateVector = new StateVector(theirStateVectors.move);
+    const otherPropStateVector = new StateVector(theirStateVectors.prop);
 
     // Get the missing ranges
-    const missingRanges = this.stateVector.diff(otherStateVector);
+    const missingMoveRanges = this.moveStateVector.diff(otherMoveStateVector);
+    const missingPropRanges = this.propStateVector.diff(otherPropStateVector);
 
     // Then, retrieve only the operations that fall within those ranges
-    const missingOps: VertexOperation[] = [];
-    // Combine moveOps and setPropertyOps for checking
-    const allOps = [...this.moveOps, ...this.setPropertyOps];
-
-    // Only check operations that might be in the missing ranges
-    for (const op of allOps) {
-      for (const range of missingRanges) {
-        if (op.id.peerId === range.peerId &&
-          op.id.counter >= range.start &&
-          op.id.counter <= range.end) {
-          missingOps.push(op);
-          break; // Move to the next op once found in a missing range
-        }
-      }
-    }
+    const missingMoveOps = this.filterOpsByRanges(this.moveOps, missingMoveRanges);
+    const missingPropOps = this.filterOpsByRanges(this.getPropertyOps(), missingPropRanges);
 
     // Sort the missing ops by OpId before returning, ensuring causal order
-    missingOps.sort((a, b) => compareOpId(a.id, b.id));
+    missingMoveOps.sort((a, b) => compareOpId(a.id, b.id));
+    missingPropOps.sort((a, b) => compareOpId(a.id, b.id));
 
-    return missingOps;
+    return [...missingMoveOps, ...missingPropOps];
   }
 
   /**
@@ -864,11 +885,13 @@ export class RepTree {
     if (value) {
       // Enable state vector and rebuild from existing operations
       this._stateVectorEnabled = true;
-      this.stateVector = StateVector.fromOperations([...this.moveOps, ...this.setPropertyOps]);
+      this.moveStateVector = StateVector.fromOperations(this.moveOps);
+      this.propStateVector = StateVector.fromOperations(this.getPropertyOps());
     } else {
       // Disable state vector and clear it to save memory
       this._stateVectorEnabled = false;
-      this.stateVector = new StateVector();
+      this.moveStateVector = new StateVector();
+      this.propStateVector = new StateVector();
     }
   }
 
@@ -882,5 +905,37 @@ export class RepTree {
       propsObject[key] = value as unknown;
     }
     return schema.parse(propsObject);
+  }
+
+  private getPropertyOps(): SetVertexProperty[] {
+    return Array.from(this.propertyOpsByKey.values());
+  }
+
+  private refreshPropStateVector() {
+    if (!this._stateVectorEnabled) {
+      return;
+    }
+
+    this.propStateVector = StateVector.fromOperations(this.getPropertyOps());
+  }
+
+  private getOpKey(op: VertexOperation): string {
+    const stream = isMoveVertexOp(op) ? "move" : "prop";
+    return `${stream}:${opIdToString(op.id)}`;
+  }
+
+  private filterOpsByRanges<T extends VertexOperation>(ops: T[], ranges: { peerId: string; start: number; end: number }[]): T[] {
+    const missingOps: T[] = [];
+    for (const op of ops) {
+      for (const range of ranges) {
+        if (op.id.peerId === range.peerId &&
+          op.id.counter >= range.start &&
+          op.id.counter <= range.end) {
+          missingOps.push(op);
+          break;
+        }
+      }
+    }
+    return missingOps;
   }
 }
