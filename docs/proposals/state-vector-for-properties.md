@@ -1,116 +1,32 @@
-# Proposal: Property Sync Without State Vectors
+# Proposal: Property Sync with Compacted State Vectors
 
 ## Summary
-Property operations are LWW per `(vertexId, key)`, so we don't need the full history to sync. Instead of a range-based state vector for property ops, this proposal uses a **vertex-grouped digest** that tracks only the latest op per key. The digest is integrated into the existing sync protocol, allowing peers to compute and send only missing property ops.
+Property operations are LWW per `(vertexId, key)`, so we only need the latest op per key for sync. This proposal ensures that when syncing property ops using state vectors, we always send only the **compacted** (latest-per-key) operations, avoiding redundant ops that would be discarded due to LWW semantics.
 
 ## Goals
-- Replace property stream state vectors with a **vertex-grouped digest** (`Record<vertexId, Record<propertyKey, OpId>>`).
-- Reduce sync payloads by sending only **missing property ops**.
-- Preserve LWW determinism using `(counter, peerId)` ordering.
-- Keep move stream unchanged (still uses range-based state vector).
+- Continue using range-based state vectors for property ops (same as move ops).
+- Ensure sync always sends only **compacted property ops** (latest per key).
+- Avoid sending ops that will be discarded due to LWW semantics.
+- Keep move stream unchanged.
 
 ## Current State
-- Properties are LWW, but we still track property ops via a stream-local state vector.
-- The state vector records ranges of property ops that no longer matter once LWW compaction is applied.
-- Sync protocol: peers exchange state vectors, then each peer calls `getMissingOps()` to compute what to send.
+- Properties are LWW, tracked in `propertyOpsByKey` (stores only latest op per key).
+- Property state vector tracks ranges of property ops per peer.
+- `getMissingOps()` filters property ops by missing ranges, but sends from `propertyOpsByKey` which already contains only latest ops.
 
 ## Proposed Design
 
-### Property Digest Structure
-Replace the property state vector with a vertex-grouped digest:
-
-```ts
-type PropertyDigest = Record<vertexId, Record<propertyKey, OpId>>
-```
-
-This is derived from `propertyOpsByKey` which stores `Map<PropertyKeyAtVertexId, SetVertexProperty>` where `PropertyKeyAtVertexId = ${key}@${vertexId}`.
-
-### Integrated Sync Protocol
-
-The existing sync protocol remains one round-trip:
-1. Peer A calls `getStateVectors()` → sends to Peer B
-2. Peer B calls `getMissingOps(peerAStateVectors)` → computes and sends ops to Peer A
-3. Peer A calls `merge(opsFromPeerB)`
-
-We change what's in the state vectors:
-- **Move ops**: Keep range-based state vector (unchanged)
-- **Property ops**: Replace with vertex-grouped digest
+### State Vector Structure (Unchanged)
+Continue using range-based state vectors for properties:
 
 ```ts
 type StateVectors = {
-  move: Record<string, number[][]>;  // Range-based (unchanged)
-  prop: Record<string, Record<string, OpId>>;  // Vertex-grouped digest
+  move: Record<string, number[][]>;  // Range-based
+  prop: Record<string, number[][]>;  // Range-based (unchanged)
 };
 ```
 
-### Digest Comparison Logic
-
-When `getMissingOps()` is called, compare digests to find missing properties:
-
-```ts
-getMissingOps(theirStateVectors: StateVectors): VertexOperation[] {
-  // Move ops: existing range-based logic
-  const missingMoveOps = /* ... existing logic ... */;
-  
-  // Property ops: digest-based comparison
-  const missingPropertyOps: SetVertexProperty[] = [];
-  const theirPropDigest = theirStateVectors.prop;
-  const ourPropOps = this.getPropertyOps(); // Already latest per key
-  
-  for (const op of ourPropOps) {
-    const theirVertexProps = theirPropDigest[op.targetId];
-    const theirOpId = theirVertexProps?.[op.key];
-    
-    // Include if they don't have this key, or our op is newer
-    if (!theirOpId || isOpIdGreaterThan(op.id, theirOpId)) {
-      missingPropertyOps.push(op);
-    }
-  }
-  
-  return [...missingMoveOps, ...missingPropertyOps];
-}
-```
-
-## API Changes
-
-```ts
-// Updated getStateVectors() - prop is now a vertex-grouped digest
-getStateVectors(): {
-  move: Record<string, number[][]>;
-  prop: Record<string, Record<string, OpId>>;
-};
-
-// getMissingOps() automatically handles digest comparison
-getMissingOps(theirStateVectors: StateVectors): VertexOperation[];
-```
-
-No new public API methods needed - the digest is built from existing `propertyOpsByKey` data.
-
-## Implementation
-
-### Building the Digest
-```ts
-getStateVectors() {
-  // ... existing move state vector ...
-  
-  // Build vertex-grouped digest from propertyOpsByKey
-  const propDigest: Record<string, Record<string, OpId>> = {};
-  for (const [keyAtVertex, op] of this.propertyOpsByKey) {
-    // Parse key format: `${propertyKey}@${vertexId}`
-    const [propertyKey, vertexId] = keyAtVertex.split('@');
-    
-    if (!propDigest[vertexId]) {
-      propDigest[vertexId] = {};
-    }
-    propDigest[vertexId][propertyKey] = op.id;
-  }
-  
-  return { move: ..., prop: propDigest };
-}
-```
-
-### Example: Property Digest JSON
-
+The state vector tracks which property op ranges have been applied:
 ```json
 {
   "move": {
@@ -118,49 +34,129 @@ getStateVectors() {
     "peer2": [[1, 8]]
   },
   "prop": {
-    "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6": {
-      "name": {"counter": 42, "peerId": "peer1"},
-      "age": {"counter": 43, "peerId": "peer1"}
-    },
-    "b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7": {
-      "type": {"counter": 12, "peerId": "peer2"},
-      "createdAt": {"counter": 13, "peerId": "peer2"}
-    }
+    "peer1": [[1, 1000]],
+    "peer2": [[1, 500]]
   }
 }
 ```
 
+### Sync Protocol (Unchanged)
+The existing sync protocol remains:
+1. Peer A calls `getStateVectors()` → sends to Peer B (just peer IDs + ranges)
+2. Peer B calls `getMissingOps(peerAStateVectors)` → computes and sends ops to Peer A
+3. Peer A calls `merge(opsFromPeerB)`
+
+**Key point:** The sync signal is compact (~100-1000 bytes, scales with peers, not vertices).
+
+### Ensuring Compacted Ops Are Sent
+
+The current implementation already does this correctly:
+
+```ts
+getMissingOps(theirStateVectors: StateVectors): VertexOperation[] {
+  // Move ops: existing range-based logic
+  const missingMoveOps = /* ... existing logic ... */;
+  
+  // Property ops: filter compacted ops by missing ranges
+  const missingPropRanges = this.propStateVector.diff(otherPropStateVector);
+  const missingPropOps = this.filterOpsByRanges(
+    this.getPropertyOps(),  // Already returns only latest per key
+    missingPropRanges
+  );
+  
+  return [...missingMoveOps, ...missingPropOps];
+}
+
+private getPropertyOps(): SetVertexProperty[] {
+  // Returns only latest op per key (already compacted)
+  return Array.from(this.propertyOpsByKey.values());
+}
+```
+
+**How it works:**
+1. `propertyOpsByKey` stores only the latest op per `(vertexId, key)` (LWW compaction).
+2. `getPropertyOps()` returns only these compacted ops.
+3. `filterOpsByRanges()` filters to ops that fall in missing ranges.
+4. Result: Only send compacted ops that receiver needs.
+
+### Receiver Application
+
+When receiver applies property ops, LWW semantics handle duplicates:
+
+```ts
+private applyLLWProperty(op: SetVertexProperty, targetVertex: VertexState) {
+  const prevOpId = this.propertyOpsByKey.get(`${op.key}@${op.targetId}`)?.id;
+  
+  // Only apply if this op is newer (or first time)
+  if (!prevOpId || isOpIdGreaterThan(op.id, prevOpId)) {
+    this.setLLWPropertyAndItsOpId(op);
+  } else {
+    this.markOpSeen(op, false);  // Discard older op
+  }
+}
+```
+
+If sender sends an op the receiver already has a newer version of, it's safely discarded.
+
 ## Advantages
-- **No range tracking** for property history that no longer matters.
-- **Smaller sync payloads** - only missing property ops are sent.
-- **Compact structure** - vertex IDs not repeated per property (~37% smaller than flat structure).
-- **Deterministic LWW** based solely on latest op per key.
-- **No protocol changes** - integrates into existing sync flow.
-- **Enables partial sync** - can request properties for specific vertices.
+- **Compact sync signal** - Only peer IDs + ranges (~100-1000 bytes, scales with peers).
+- **Already sends compacted ops** - `propertyOpsByKey` ensures only latest per key.
+- **Handles edge cases** - Receiver's LWW logic safely discards redundant ops.
+- **No protocol changes** - Uses existing state vector mechanism.
+- **Scales well** - Sync signal size independent of vertex/property count.
 
 ## Size Comparison
 
-**Move State Vector (Range-Based):**
-- Very compact: `{"peer1": [[1, 1000]]}` = ~43 chars for 1000 ops
-- Compresses sequential ops into ranges
+**Sync Signal (State Vector):**
+```json
+{
+  "prop": {
+    "peer1": [[1, 1000000]],
+    "peer2": [[1, 500000]]
+  }
+}
+```
+- Size: ~100-1000 bytes (only peer IDs + number ranges)
+- Scales with: Number of peers (typically 10-100)
+- Independent of: Number of vertices or properties
 
-**Property Digest (Vertex-Grouped):**
-- ~60-87 chars per additional property on a vertex
-- For 10k vertices × 5 properties = 50k properties: ~2.9-3.8 MB uncompressed
-- With compression: ~1-1.5 MB
-- Still much better than sending all ops: 50k ops × ~200 bytes = ~10 MB
+**What We Send (Ops):**
+- Only property ops that:
+  1. Fall in missing ranges (from state vector comparison)
+  2. Are latest per key (from `propertyOpsByKey` compaction)
+- If receiver already has newer version, it's discarded by LWW logic
 
-The digest is less compact than move state vectors, but appropriate for LWW properties because we only care about latest ops (ranges don't help), and it still sends only missing ops.
+## Potential Inefficiency
 
-## Migration Strategy
-- The digest can be built directly from `propertyOpsByKey` - no new storage needed.
-- For backward compatibility during transition:
-  - `getStateVectors()` can return both formats (digest + legacy ranges)
-  - `getMissingOps()` can handle both formats
-  - Newer peers prefer digest, older peers fall back to ranges
-- After migration period, remove range-based property state vector entirely.
+**Minor inefficiency:** We might send a few ops that the receiver already has a newer version of. However:
+- The sync signal remains compact (scales with peers, not vertices).
+- The receiver's LWW logic safely handles and discards redundant ops.
+- The alternative (digest) would require sending vertex IDs for every property (~300MB for 1M vertices), which is far worse.
 
-## Handling Property Deletes
-- Property deletes are represented as `SetVertexProperty` with `value: undefined`
-- The digest includes the delete op's OpId if it's the latest op for that key
-- Receiver will apply the delete if the OpId is newer than their current value
+**Example:**
+- Sender has: `vertex1:name = op1000`
+- Receiver has: `vertex1:name = op1001` (newer)
+- State vector says receiver missing range [800, 1000]
+- Sender sends op1000
+- Receiver applies, sees op1001 is newer, discards op1000
+
+This is acceptable because the sync signal stays compact.
+
+## Implementation Status
+
+The current implementation already follows this approach:
+- ✅ `propertyOpsByKey` stores only latest per key (compacted)
+- ✅ `getPropertyOps()` returns only compacted ops
+- ✅ State vectors track ranges per peer
+- ✅ `getMissingOps()` filters compacted ops by missing ranges
+
+**No changes needed** - this proposal documents and validates the current approach.
+
+## Recommendation
+
+Continue using state vectors for property ops. The current implementation correctly:
+1. Maintains LWW compaction in `propertyOpsByKey`
+2. Sends only compacted ops during sync
+3. Keeps sync signal compact (scales with peers, not vertices)
+
+The minor inefficiency of potentially sending a few redundant ops is acceptable given the massive advantage of a compact sync signal that doesn't scale with vertex count.
