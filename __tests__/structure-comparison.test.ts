@@ -246,17 +246,12 @@ describe('RepTree Structure Comparison', () => {
     console.log('Merged Tree:');
     console.log(mergedTreeFinalString);
     
-    // Document behavior: Trees with different roots will never have identical structures
-    // even after merging operations because their roots remain different
-    console.log('\nNOTE: Trees starting with different root IDs will never have identical structures');
-    console.log('even after merging all operations, because the root vertices remain distinct.');
-    console.log('This is expected behavior for the current implementation.');
-    
     // We expect all trees to have the same number of vertices after syncing
     expect(treeA.getAllVertices().length).toBe(treeB.getAllVertices().length);
     expect(treeA.getAllVertices().length).toBe(mergedTree.getAllVertices().length);
-    
-    // We expect trees with different root IDs to never match in structure
+
+    // Independently created roots remain distinct after merge, so these
+    // independently initialized documents are not structurally identical.
     expect(treeA.compareStructure(treeB)).toBe(false);
   });
-}); 
+});
