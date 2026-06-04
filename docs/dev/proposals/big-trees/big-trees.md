@@ -17,9 +17,11 @@ storage) and pull only the hot data into the JS heap.
 | **Materialised nodes** (current tree snapshot)                 | millions of nodes    | **`NodeStore`** – one row per node          |
 | **Move-ops** (ordering / conflict-res algorithm reads this a lot) | years of edits       | **`MoveLogStore`** – append-only, sequential id |
 | **Property-ops** (rarely needed by the move algorithm)            | arbitrary user props | **`PropLogStore`** – append-only                |
+| **Secondary indexes** (optional local query acceleration)          | many indexed keys    | **`IndexStore`** – rebuildable local lookup tables |
 
-The three stores all implement the same low-level CRUD / range scan
-interface but can be backed by **SQLite, IndexedDB, S3 or HTTP**.
+The durable stores use small CRUD / range-scan contracts and can be
+backed by **SQLite, IndexedDB, S3 or HTTP**. `IndexStore` is optional
+and rebuildable; it exists to keep secondary queries off the node cache.
 
 ---
 
@@ -42,6 +44,13 @@ interface LogStoreLike<T> {
 
 type MoveLogStore = LogStoreLike<MoveNode>;
 type PropLogStore = LogStoreLike<SetNodeProperty>;
+
+interface IndexStore<K = unknown> {
+  put(indexName: string, key: K, nodeId: string): Promise<void>;
+  delete(indexName: string, key: K, nodeId: string): Promise<void>;
+  query(indexName: string, key: K): Promise<string[]>;
+  clear(indexName: string): Promise<void>;
+}
 ```
 
 `RepTree` gains a constructor overload:
@@ -51,6 +60,7 @@ new RepTree(peerId, {
   nodeStore,
   moveLog,
   propLog,
+  indexStore?,     // optional; falls back to in-memory indexes
   cacheSize?: number   // default 50 000 nodes
 })
 ```
@@ -80,6 +90,14 @@ CREATE TABLE rt_prop_ops(       -- property log
   target_id TEXT, key TEXT,
   value BLOB, transient INT
 );
+
+CREATE TABLE rt_indexes(        -- optional local secondary indexes
+  index_name TEXT,
+  key BLOB,
+  node_id TEXT,
+  PRIMARY KEY(index_name, key, node_id)
+);
+CREATE INDEX rt_indexes_lookup ON rt_indexes(index_name, key);
 ```
 
 `rt_nodes_pidx` gives **O(page-size)** reads for “fat” child lists with:
@@ -103,6 +121,7 @@ LIMIT  :limit;
 | **Child list**    | sync array in `NodeState.children`     | `async *children()` returns pages from `NodeStore.getChildrenPage`                                  |
 | **Logging an op** | push into `moveOps[] / setPropertyOps[]` | `await moveLog.append(op)` or `propLog.append(op)`                                                    |
 | **Conflict loop** | iterates `moveOps[]`                     | same, but `moveOps[]` is filled by a **fold worker** that streams new rows from `moveLog.scanRange()` |
+| **Index query**   | lookup local JS map                      | `await indexStore.query(name, key)` returns ids; hydrate cache misses with `NodeStore.getNode(id)`     |
 
 A tiny **LRU** (default 50 000 nodes ≈ < 4 MB) shields the stores from
 thrashy hot loops:
@@ -162,6 +181,7 @@ Ship each step behind a feature flag until the ecosystem catches up.
 ### 8 Result
 
 * Nodes and ops live on disk or a remote service; RAM stays small.
+* Secondary indexes can also live off-heap; querying an index does not require loading the full tree.
 * Existing move-conflict algorithm continues to operate in memory on
   just the necessary slice of the move log.
 * Library consumers keep the same conceptual model—just sprinkle `await`
