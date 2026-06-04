@@ -80,4 +80,4 @@ The state vector functionality in RepTree:
 - Will automatically rebuild from existing operations when re-enabled
 - Uses `getStateVectors()` and `getMissingOps(stateVectors)` for range-based synchronization
 
-Property operations are last-writer-wins and are compacted to the latest operation per `(vertexId, key)`. The property state vector represents the retained compacted property operations that can be sent during sync, not a full audit history of every property write.
+Property operations are last-writer-wins and are compacted to the latest operation per `(nodeId, key)`. The property state vector represents the retained compacted property operations that can be sent during sync, not a full audit history of every property write.

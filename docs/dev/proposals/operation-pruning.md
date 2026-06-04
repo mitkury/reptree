@@ -8,7 +8,7 @@ RepTree stores all operations indefinitely, causing memory growth:
 - **Most ops are superseded and no longer needed for current state**
 
 **Key insight:** We only need operations to reconstruct **current state**, not full history:
-- **Property ops (LWW)**: Only the latest op per vertex+key matters
+- **Property ops (LWW)**: Only the latest op per node+key matters
 - **Move ops**: Need all for conflict resolution in the move CRDT
 
 **Why we can't just delete ops:**
@@ -33,7 +33,7 @@ Track pruned operations in the state vector so peers know:
 class StateVector {
   private appliedRanges: Record<string, number[][]> = {};  // Ops we've applied
   private prunedRanges: Record<string, number[][]> = {};   // Ops we've pruned (subset of applied)
-  
+
   // Ops we have locally = appliedRanges - prunedRanges
 }
 ```
@@ -46,7 +46,7 @@ class StateVector {
 export class StateVector {
   private appliedRanges: Record<string, number[][]> = {};
   private prunedRanges: Record<string, number[][]> = {};
-  
+
   /**
    * Mark operations as pruned (deleted from local storage but seen)
    */
@@ -54,12 +54,12 @@ export class StateVector {
     if (!this.prunedRanges[peerId]) {
       this.prunedRanges[peerId] = [];
     }
-    
+
     // Add to pruned ranges and merge
     this.prunedRanges[peerId].push([start, end]);
     this.prunedRanges[peerId] = this.mergeRanges(this.prunedRanges[peerId]);
   }
-  
+
   /**
    * Get operations we have locally (applied but not pruned)
    */
@@ -68,14 +68,14 @@ export class StateVector {
     const pruned = this.prunedRanges[peerId] || [];
     return subtractRanges(applied, pruned);
   }
-  
+
   /**
    * Get operations we've seen (applied, including pruned)
    */
   getAppliedRanges(peerId: string): number[][] {
     return this.appliedRanges[peerId] || [];
   }
-  
+
   /**
    * Check if we need an operation
    * (haven't applied it, regardless of pruning)
@@ -93,86 +93,86 @@ export class StateVector {
 export class RepTree {
   /**
    * State-based pruning: Keep only operations needed for current state
-   * 
-   * - Property ops (LWW): Keep only the latest op per vertex+key
+   *
+   * - Property ops (LWW): Keep only the latest op per node+key
    * - Move ops: Keep all (needed for conflict resolution)
-   * 
+   *
    * This is the optimal pruning strategy - removes superseded ops while
    * maintaining ability to reconstruct current state and sync with peers.
-   * 
+   *
    * @returns Number of operations pruned
    */
   pruneSupersededOperations(): number {
-    const latestPropertyOps = new Map<string, SetVertexProperty>();
+    const latestPropertyOps = new Map<string, SetNodeProperty>();
     const toKeep = new Set<string>();
-    
-    // Find latest property op for each vertex+key combination
+
+    // Find latest property op for each node+key combination
     for (const op of this.operations) {
       if (isLWWPropertyOp(op)) {
         const key = `${op.targetId}:${op.key}`;
         const existing = latestPropertyOps.get(key);
-        
+
         if (!existing || compareOpId(op.id, existing.id) > 0) {
           latestPropertyOps.set(key, op);
         }
-      } else if (isMoveVertexOp(op)) {
+      } else if (isMoveNodeOp(op)) {
         // Keep ALL move ops (needed for CRDT conflict resolution)
         toKeep.add(opIdToString(op.id));
       }
     }
-    
+
     // Add latest property ops to keep set
     for (const op of latestPropertyOps.values()) {
       toKeep.add(opIdToString(op.id));
     }
-    
+
     // Find superseded ops to remove
-    const toRemove = this.operations.filter(op => 
+    const toRemove = this.operations.filter(op =>
       !toKeep.has(opIdToString(op.id))
     );
-    
+
     if (toRemove.length === 0) return 0;
-    
+
     // Remove superseded ops
     const removeIds = new Set(toRemove.map(op => opIdToString(op.id)));
-    this.operations = this.operations.filter(op => 
+    this.operations = this.operations.filter(op =>
       !removeIds.has(opIdToString(op.id))
     );
-    
+
     // Mark as pruned in state vector
     this.markOpsAsPruned(toRemove);
-    
+
     return toRemove.length;
   }
-  
+
   /**
    * Time-based pruning: Keep only recent operations
-   * 
+   *
    * Simpler but less optimal than state-based pruning.
    * Useful for tests or when you want predictable memory usage.
-   * 
+   *
    * @param keepCount Number of recent operations to keep
    */
   pruneOldOperations(keepCount: number = 1000): number {
     if (this.operations.length <= keepCount) return 0;
-    
+
     const toRemove = this.operations.length - keepCount;
     const removed = this.operations.splice(0, toRemove);
-    
+
     this.markOpsAsPruned(removed);
     return toRemove;
   }
-  
-  private markOpsAsPruned(ops: VertexOperation[]): void {
+
+  private markOpsAsPruned(ops: NodeOperation[]): void {
     const byPeer = new Map<string, number[]>();
-    
+
     for (const op of ops) {
       if (!byPeer.has(op.id.peerId)) {
         byPeer.set(op.id.peerId, []);
       }
       byPeer.get(op.id.peerId)!.push(op.id.counter);
     }
-    
+
     for (const [peerId, counters] of byPeer) {
       counters.sort((a, b) => a - b);
       const ranges = this.countersToRanges(counters);
@@ -181,14 +181,14 @@ export class RepTree {
       }
     }
   }
-  
+
   private countersToRanges(counters: number[]): number[][] {
     if (counters.length === 0) return [];
-    
+
     const ranges: number[][] = [];
     let start = counters[0];
     let end = counters[0];
-    
+
     for (let i = 1; i < counters.length; i++) {
       if (counters[i] === end + 1) {
         end = counters[i];
@@ -199,7 +199,7 @@ export class RepTree {
       }
     }
     ranges.push([start, end]);
-    
+
     return ranges;
   }
 }
@@ -209,12 +209,12 @@ export class RepTree {
 
 ```typescript
 // getMissingOps now uses appliedRanges (not local ranges)
-getMissingOps(theirStateVector: StateVector): VertexOperation[] {
+getMissingOps(theirStateVector: StateVector): NodeOperation[] {
   const missingRanges = this.stateVector.diff(theirStateVector);
-  
+
   return this.operations.filter(op => {
     // Check if op is in any missing range
-    return missingRanges.some(range => 
+    return missingRanges.some(range =>
       range.peerId === op.id.peerId &&
       op.id.counter >= range.start &&
       op.id.counter <= range.end
@@ -261,14 +261,14 @@ console.log(`Pruned ${pruned} superseded operations`);
 
 **Why this is optimal:**
 - Keeps exactly what's needed for current state
-- Property ops: Only latest per vertex+key (LWW wins anyway)
+- Property ops: Only latest per node+key (LWW wins anyway)
 - Move ops: All kept (needed for CRDT conflict resolution)
 - No coordination needed - works with CRDT semantics
 - New peers get snapshot + minimal ops = full sync
 
 **Example:**
 ```typescript
-// Property history for vertex1.name:
+// Property history for node1.name:
 { id: 1@peer1, key: "name", value: "Alice" }   // ❌ Pruned (superseded)
 { id: 5@peer1, key: "name", value: "Bob" }     // ❌ Pruned (superseded)
 { id: 10@peer2, key: "name", value: "Charlie" } // ✅ Kept (latest)
@@ -327,7 +327,7 @@ Current:
 
 **Production property-heavy scenario:**
 ```
-Document editor with 1,000 vertices, each updated 100 times:
+Document editor with 1,000 nodes, each updated 100 times:
 - Without pruning: 100,000 property ops + move ops
 - With state-based: 1,000 property ops + move ops
 - 99% reduction on property ops!
@@ -339,7 +339,7 @@ Document editor with 1,000 vertices, each updated 100 times:
 
 **Long-running app:**
 - Without pruning: Linear growth (unbounded)
-- With state-based: Grows with unique vertices + structure changes (bounded)
+- With state-based: Grows with unique nodes + structure changes (bounded)
 - With time-based: Constant memory (~predictable)
 
 ### Edge Cases
@@ -347,31 +347,31 @@ Document editor with 1,000 vertices, each updated 100 times:
 **1. Pruned ops requested by peer:**
 ```typescript
 // Peer asks for ops we've pruned
-getMissingOps(theirStateVector): VertexOperation[] {
+getMissingOps(theirStateVector): NodeOperation[] {
   const missing = super.getMissingOps(theirStateVector);
-  
+
   // Check if we've pruned any of these
-  const pruned = missing.filter(op => 
+  const pruned = missing.filter(op =>
     this.stateVector.isPruned(op.id)
   );
-  
+
   if (pruned.length > 0) {
     // Option 1: Error (strict)
     throw new Error('Requested operations have been pruned');
-    
+
     // Option 2: Return what we have (graceful)
     return missing.filter(op => !this.stateVector.isPruned(op.id));
-    
+
     // Option 3: Fetch from archive (advanced)
     return [...available, ...await fetchFromArchive(pruned)];
   }
-  
+
   return missing;
 }
 ```
 
 **2. New peer joining:**
-- Gets full current state snapshot (all vertices)
+- Gets full current state snapshot (all nodes)
 - Gets only recent operations (not pruned ones)
 - Works if all current state is consistent
 

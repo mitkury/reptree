@@ -1,5 +1,5 @@
 import { describe, test } from "vitest";
-import { RepTree, bindVertex } from '../dist/index.js';
+import { RepTree, bindNode } from '../dist/index.js';
 import { z } from 'zod';
 
 describe('examples should work', () => {
@@ -8,21 +8,21 @@ describe('examples should work', () => {
     const tree = new RepTree('company-org-1');
     const company = tree.createRoot();
 
-    // Create a node (we call them vertices in RepTree) in the root of our new tree
+    // Create a node (we call them nodes in RepTree) in the root of our new tree
     const devs = company.newNamedChild("developers");
     const qa = company.newNamedChild("qa");
 
-    // Create a vertex in another vertex
+    // Create a node in another node
     const alice = qa.newChild();
 
     // Set properties
     alice.setProperty('name', 'Alice');
     alice.setProperty('age', 32);
 
-    // Move the vertex inside a different vertex
+    // Move the node inside a different node
     alice.moveTo(devs);
 
-    // Bind a vertex to a type to set its properties like regular fields
+    // Bind a node to a type to set its properties like regular fields
     const bob = qa.newChild().bind<{ name: string, age: number }>();
     bob.name = "Bob";
     bob.age = 33;

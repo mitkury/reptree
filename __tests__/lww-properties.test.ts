@@ -3,7 +3,7 @@ import { describe, test, expect } from 'vitest';
 
 describe('LWW Properties', () => {
   function testPropertyType(propertyName: string, values: any[], expectedFinalValue: any) {
-    // Create a tree and get the root vertex
+    // Create a tree and get the root node
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
 
@@ -23,10 +23,10 @@ describe('LWW Properties', () => {
     // Test with operations in reverse order
     const reversedOps = [...tree.getAllOps()].reverse();
     const duplicateTree = new RepTree('peer2', reversedOps);
-    
+
     const rootFromDuplicateTree = duplicateTree.root;
     expect(rootFromDuplicateTree).not.toBeUndefined();
-    
+
     if (rootFromDuplicateTree) {
       const dupValue = rootFromDuplicateTree.getProperty(propertyName);
       if (expectedFinalValue !== null && typeof expectedFinalValue === 'object') {

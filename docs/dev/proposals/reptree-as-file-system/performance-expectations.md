@@ -1,19 +1,19 @@
 # Performance Goals & Benchmarks for the RepTree‑Based Virtual File‑System
 
-Date: 2025‑04‑19  
+Date: 2025‑04‑19
 Status: Draft
 
-> This document establishes **quantitative targets** and the assumptions behind them.  
+> This document establishes **quantitative targets** and the assumptions behind them.
 > It complements the design in *Virtual File‑System Layer on Top of RepTree* and the related proposals on state vectors, large‑child optimisation, and Yjs integration.
 ---
 
 ## 1 — Test Hardware Baseline
 
-* Apple M1 / 16 GB RAM, or equivalent 2020‑era laptop  
-* NVMe SSD (~3 GB/s sequential read)  
+* Apple M1 / 16 GB RAM, or equivalent 2020‑era laptop
+* NVMe SSD (~3 GB/s sequential read)
 * Node ≥ 20
 
-All numbers below assume **release builds** with snapshots & logs stored on the local SSD.  
+All numbers below assume **release builds** with snapshots & logs stored on the local SSD.
 Remote blob fetches are excluded—those are network‑bound.
 
 ---
@@ -22,8 +22,8 @@ Remote blob fetches are excluded—those are network‑bound.
 
 | Scenario | Dataset | Goal |
 |----------|---------|------|
-| **Cold start** (first run) | FS tree = 100 k vertices, 3 MB gz snapshot, 200 kB ops tail | **\< 70 ms** to the first interactive paint |
-| **Sub‑doc open** (`file‑tree`) | 20 k vertices, 600 kB snapshot | **\< 20 ms** to fully hydrated `RepTree` |
+| **Cold start** (first run) | FS tree = 100 k nodes, 3 MB gz snapshot, 200 kB ops tail | **\< 70 ms** to the first interactive paint |
+| **Sub‑doc open** (`file‑tree`) | 20 k nodes, 600 kB snapshot | **\< 20 ms** to fully hydrated `RepTree` |
 | **Mount preload** | same as above, background thread | Does not block UI; ≤ 20% idle CPU |
 
 ---
@@ -45,7 +45,7 @@ LRU eviction keeps RSS stable regardless of workspace size. Hybrid child storage
 | Operation | Payload | Target (p95) |
 |-----------|---------|--------------|
 | Path lookup (`/a/b/c`) | depth ≤ 10 | **\< 30 µs** |
-| Add / move vertex | single op | **\< 50 µs** |
+| Add / move node | single op | **\< 50 µs** |
 | Burst edit | 1 000 ops txn | **\< 3 ms** total |
 | Large dir listing | 30 k children | **\< 25 ms** |
 
@@ -56,8 +56,8 @@ All figures measured with Node’s `perf_hooks.performance.now()` inside the sam
 ## 5 — Sync & Networking
 
 * **State‑vector handshake**: 1 RTT, payload ≤ 1 kB no matter workspace size.
-* **Delta after 1 h offline (10 k ops)**:  
-  * Transfer ≤ 100 kB compressed.  
+* **Delta after 1 h offline (10 k ops)**:
+  * Transfer ≤ 100 kB compressed.
   * Apply time ≤ 8 ms (`array.push` + map updates).
 
 ---
@@ -77,7 +77,7 @@ CRC‑32 footer per chunk guarantees corruption detection without costly checksu
 
 | Dimension | Soft limit | Mitigation |
 |-----------|------------|------------|
-| Children per vertex | 100 k | B‑tree storage + paging (proposal) |
+| Children per node | 100 k | B‑tree storage + paging (proposal) |
 | Ops per single tree | 5 M | Reduce `OPS_PER_SNAPSHOT` to 1 k; compact during idle |
 | Concurrent cached trees | `MAX_OPEN` env var | Automatic LRU eviction |
 
@@ -87,9 +87,9 @@ Beyond soft limits the system still functions but latency rises linearly.
 
 ## 8 — Benchmark Methodology
 
-1. **Synthetic generator**: expand `tests/fuzzyTests.ts` to create FS trees of configurable size, then measure:  
+1. **Synthetic generator**: expand `tests/fuzzyTests.ts` to create FS trees of configurable size, then measure:
    ```bash
-   node bench/fuzz-startup.js --vertices 100000 --ops-tail 20000
+   node bench/fuzz-startup.js --nodes 100000 --ops-tail 20000
    ```
 2. **Real‑world traces**: record live op streams and replay in a headless benchmark runner.
 3. CI budget: run the **p50** subset (< 3 s total) on every pull request; run full p95 suite nightly.
@@ -98,8 +98,8 @@ Beyond soft limits the system still functions but latency rises linearly.
 
 ## 9 — Future Work
 
-* Automate **profiling flamegraphs** to catch regressions.  
-* Add **Bloom‑filter cache** for “does peer have this tree?” queries (research).  
+* Automate **profiling flamegraphs** to catch regressions.
+* Add **Bloom‑filter cache** for “does peer have this tree?” queries (research).
 * Investigate **WebAssembly snapshot codec** for 2× faster (de)compression.
 
 ---

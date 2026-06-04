@@ -1,14 +1,14 @@
-# Proposal: Optimizing RepTree for Vertices with Large Numbers of Children
+# Proposal: Optimizing RepTree for Nodes with Large Numbers of Children
 
 ## Background
 
-The current implementation of `RepTree` uses arrays to store children of vertices. While this is efficient for the common case of vertices with a small number of children, it may cause performance issues when vertices have a large number of children (thousands or more). This proposal outlines potential optimizations and a research plan for addressing this limitation.
+The current implementation of `RepTree` uses arrays to store children of nodes. While this is efficient for the common case of nodes with a small number of children, it may cause performance issues when nodes have a large number of children (thousands or more). This proposal outlines potential optimizations and a research plan for addressing this limitation.
 
 ## Current Implementation Analysis
 
 In the current implementation:
 
-- Children are stored in simple arrays (`VertexState.children`)
+- Children are stored in simple arrays (`NodeState.children`)
 - Operations like `getChildren()` and `getChildrenIds()` perform array traversals and sorts
 - Time complexity for child operations is O(n) where n is the number of children
 - Memory usage is efficient for small collections
@@ -65,21 +65,21 @@ Several proven techniques from file systems and databases could be adapted:
 The implementation should ideally maintain the existing API while changing the internal implementation:
 
 ```typescript
-class VertexState {
+class NodeState {
   // Current implementation
   children: string[] = [];
-  
+
   // Potential new implementation
   private _childrenStorage: ChildrenStorage; // Interface to different implementations
-  
+
   getChildren(): string[] {
     return this._childrenStorage.getAll();
   }
-  
+
   addChild(childId: string): void {
     this._childrenStorage.add(childId);
   }
-  
+
   // etc.
 }
 ```
@@ -94,6 +94,6 @@ class VertexState {
 
 ## Conclusion
 
-Optimizing the storage of children in vertices with large numbers could significantly improve performance in certain use cases. The hybrid approach that adapts based on the number of children offers a good balance between implementation complexity and performance benefits.
+Optimizing the storage of children in nodes with large numbers could significantly improve performance in certain use cases. The hybrid approach that adapts based on the number of children offers a good balance between implementation complexity and performance benefits.
 
-The research plan outlined above will help determine if this optimization is necessary and what the optimal implementation strategy would be. 
+The research plan outlined above will help determine if this optimization is necessary and what the optimal implementation strategy would be.

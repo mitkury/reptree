@@ -1,18 +1,18 @@
 import { describe, expect, test } from "vitest";
 import { RepTree } from "../src";
-import { isAnyPropertyOp, isMoveVertexOp } from "../src/operations";
+import { isAnyPropertyOp, isMoveNodeOp } from "../src/operations";
 
 describe("Basic ops structure", () => {
   test("property and move clocks are independent", () => {
     const tree = new RepTree("peer1");
     const root = tree.createRoot();
 
-    // Move op: createRoot() creates a root vertex via a move op
+    // Move op: createRoot() creates a root node via a move op
     // Property op: createRoot() also sets _c, which is a property op
     // The important invariant is that move ops and prop ops each have their own counters.
     const ops = tree.getAllOps();
 
-    const moveOps = ops.filter(isMoveVertexOp);
+    const moveOps = ops.filter(isMoveNodeOp);
     const propOps = ops.filter(isAnyPropertyOp);
 
     expect(moveOps.length).toBeGreaterThan(0);
@@ -29,7 +29,7 @@ describe("Basic ops structure", () => {
     root.setProperty("name", "Project");
     const ops2 = tree.getAllOps();
     const propOps2 = ops2.filter(isAnyPropertyOp);
-    const moveOps2 = ops2.filter(isMoveVertexOp);
+    const moveOps2 = ops2.filter(isMoveNodeOp);
 
     expect(moveOps2.length).toBe(moveOps.length);
     expect(propOps2.length).toBe(propOps.length + 1);

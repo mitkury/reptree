@@ -1,22 +1,22 @@
 # Indexing in RepTree
 
-RepTree can support local secondary indexes to enable fast queries over vertices and properties. Indexes are maintained by subscribing to CRDT events and stored in memory. Below is a proposed API and usage example.
+RepTree can support local secondary indexes to enable fast queries over nodes and properties. Indexes are maintained by subscribing to CRDT events and stored in memory. Below is a proposed API and usage example.
 
 ## API
 ```ts
-import { RepTree, Vertex } from 'reptree'
+import { RepTree, Node } from 'reptree'
 
 type IndexType = 'property' | 'fulltext' | 'custom'
 
 interface IndexOptions<K> {
   name: string
   type: IndexType
-  // property index: key in vertex properties
+  // property index: key in node properties
   property?: string
   // full-text index: tokenizer for property values
   tokenizer?: (s: string) => string[]
-  // custom index: map a vertex to one or more keys
-  mapKey?: (v: Vertex) => K | K[]
+  // custom index: map a node to one or more keys
+  mapKey?: (v: Node) => K | K[]
   // treat returned array or property values as multi-valued
   multiValued?: boolean
 }
@@ -27,20 +27,20 @@ declare module 'reptree' {
     dropIndex(name: string): void
     hasIndex(name: string): boolean
     listIndices(): string[]
-    queryIndex<K>(name: string, key: K): Vertex[]
+    queryIndex<K>(name: string, key: K): Node[]
     /** Subscribe to index update events */
     observeIndex<K>(
       name: string,
-      listener: (v: Vertex, action: 'add' | 'remove', key: K) => void
+      listener: (v: Node, action: 'add' | 'remove', key: K) => void
     ): () => void
-    query(fn: (v: Vertex) => boolean): Vertex[]
+    query(fn: (v: Node) => boolean): Node[]
   }
 }
 ```
 
 ### Full-text Index
 
-To create a full-text index, set `type: 'fulltext'`, specify the `property` to index, and provide a `tokenizer` function that splits text into tokens. Tokens are indexed as keys; use `multiValued: true` to index all tokens per vertex.
+To create a full-text index, set `type: 'fulltext'`, specify the `property` to index, and provide a `tokenizer` function that splits text into tokens. Tokens are indexed as keys; use `multiValued: true` to index all tokens per node.
 
 ```ts
 tree.createIndex<string>({
@@ -60,7 +60,7 @@ tree.queryIndex('contentsFTS', 'replication')
 
 ### Custom Index
 
-A custom index maps each vertex to one or more keys via `mapKey`. It can return a single key or an array of keys. Set `multiValued: true` when mapping to multiple keys.
+A custom index maps each node to one or more keys via `mapKey`. It can return a single key or an array of keys. Set `multiValued: true` when mapping to multiple keys.
 
 ```ts
 // Single-valued custom index
@@ -119,7 +119,7 @@ const mine = tree.queryIndex('byOwnerId', 123)
 ```
 
 ## Implementation Notes
-- `createIndex` seeds a map from existing vertices
+- `createIndex` seeds a map from existing nodes
 - Subscribes to CRDT events (`op`, `propSet`) to keep indexes up-to-date
 - `queryIndex` performs O(1) map lookups
 - Indexes are local and rebuilt on cold start

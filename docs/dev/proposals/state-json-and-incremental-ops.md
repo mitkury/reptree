@@ -29,7 +29,7 @@ Use a single compact JSON document named “state” (not “snapshot”).
     "peerA": 80,
     "peerB": 40
   },
-  "vertices": {
+  "nodes": {
     "root": {
       "parentId": null,
       "props": { "name": "Project", "_c": "2025-10-27T12:00:00.000Z" },
@@ -47,7 +47,7 @@ Notes:
 - `counterBarrier` is optional and supports the windowed/backfill protocol described in `async-move-ops-background-fetching.md`.
 - `childrenIds` are optional; loader can rebuild from `parentId` if absent.
 - Persist only non‑transient properties in `props`; do not include transient overlays.
-- Root semantics: root is any vertex with `parentId: null` and `id !== "0"`; `rootId` is a convenience field.
+- Root semantics: root is any node with `parentId: null` and `id !== "0"`; `rootId` is a convenience field.
 
 ### Storage model
 
@@ -68,9 +68,9 @@ Notes:
 
 1) Load state from S3
 - GET `state/<treeId>/current.json`
-- Initialize `RepTree` from `vertices`, `parentId`, `props`
+- Initialize `RepTree` from `nodes`, `parentId`, `props`
 - Install `stateVector` and optional `counterBarrier`
-  - Ensure the special null vertex (id `"0"`) exists in memory before applying any ops that might delete/move to null. If the state did not include it, create it eagerly.
+  - Ensure the special null node (id `"0"`) exists in memory before applying any ops that might delete/move to null. If the state did not include it, create it eagerly.
   - Restore local Lamport clock from `stateVector`: set it to the max counter observed for the current peer (to avoid counter reuse when this peer generates new ops).
 
 2) Apply latest N ops
@@ -97,13 +97,13 @@ Notes:
 
 ### Implementation notes from current code
 
-- Tree construction: the engine stores structure in `TreeState` as `VertexState{id, parentId, children, properties}`. Hydration can be performed by calling a dedicated loader inside the library that:
-  - Materializes all vertices (using `TreeState.moveVertex(id, parentId)`) without generating local ops
-  - Writes persistent `props` directly into the underlying `VertexState` (bypassing transient overlays)
+- Tree construction: the engine stores structure in `TreeState` as `NodeState{id, parentId, children, properties}`. Hydration can be performed by calling a dedicated loader inside the library that:
+  - Materializes all nodes (using `TreeState.moveNode(id, parentId)`) without generating local ops
+  - Writes persistent `props` directly into the underlying `NodeState` (bypassing transient overlays)
   - Installs the provided `stateVector` as-is
   - Sets the Lamport clock to the max counter for the local peer from `stateVector`
 - Transients: do not serialize transient properties; they are UI overlays and should not be present in state.
-- Null vertex: moves to null use parent id `"0"`. Ensure `"0"` exists during load so later delete/move ops don’t get stuck as "pending moves with missing parent".
+- Null node: moves to null use parent id `"0"`. Ensure `"0"` exists during load so later delete/move ops don’t get stuck as "pending moves with missing parent".
 - Children order: `TreeState.getChildren` sorts for reads; `childrenIds` in the state is optional and used only to speed up load.
 
 ### Minimal helpers (sketch)

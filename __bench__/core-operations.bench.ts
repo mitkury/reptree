@@ -2,11 +2,11 @@ import { bench, describe } from 'vitest';
 import { RepTree } from '../src/RepTree';
 
 describe('RepTree Core Operations', () => {
-  bench('vertex creation', () => {
+  bench('node creation', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
     for (let i = 0; i < 1000; i++) {
-      tree.newVertex(root.id, { name: `vertex-${i}` });
+      tree.newNode(root.id, { name: `node-${i}` });
     }
   });
 
@@ -14,11 +14,11 @@ describe('RepTree Core Operations', () => {
     // Setup tree with properties
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const vertex = tree.newVertex(root.id, { name: 'test-vertex' });
-    
+    const node = tree.newNode(root.id, { name: 'test-node' });
+
     // Benchmark property access
     for (let i = 0; i < 10000; i++) {
-      tree.getVertexProperty(vertex.id, 'name');
+      tree.getNodeProperty(node.id, 'name');
     }
   });
 
@@ -28,15 +28,15 @@ describe('RepTree Core Operations', () => {
     const root = tree.createRoot();
     const depth = 5;
     const breadth = 5;
-    
+
     // Create a tree with depth and breadth
     let currentParentId = root.id;
     for (let d = 0; d < depth; d++) {
       const parentId = currentParentId;
       for (let b = 0; b < breadth; b++) {
-        const vertex = tree.newVertex(parentId, { depth: d, index: b });
+        const node = tree.newNode(parentId, { depth: d, index: b });
         if (b === 0) {
-          currentParentId = vertex.id;
+          currentParentId = node.id;
         }
       }
     }

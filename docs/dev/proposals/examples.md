@@ -23,7 +23,7 @@ This proposal outlines a plan to create an interactive examples website for RepT
 ### 1. Basic Tree Operations
 
 - **Simple Tree Builder**: Interactive tree creation with drag-and-drop nodes
-- **Property Editor**: Demonstrate setting and getting properties on vertices
+- **Property Editor**: Demonstrate setting and getting properties on nodes
 - **Tree Visualization**: Real-time visualization of the tree structure
 - **Serialization**: Show how to save and load trees
 
@@ -97,4 +97,4 @@ This proposal outlines a plan to create an interactive examples website for RepT
 
 An interactive examples website will significantly enhance RepTree's adoption and understanding. By showcasing its capabilities through progressively complex, visual examples, developers can better understand the power of tree-based CRDTs and how to implement them in their own applications.
 
-The SvelteKit-based approach provides a modern, fast development experience while keeping the examples tightly integrated with the main repository, ensuring they stay up-to-date with the latest package developments. 
+The SvelteKit-based approach provides a modern, fast development experience while keeping the examples tightly integrated with the main repository, ensuring they stay up-to-date with the latest package developments.

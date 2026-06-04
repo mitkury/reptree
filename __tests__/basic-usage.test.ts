@@ -6,17 +6,17 @@ describe('RepTree Basic Usage', () => {
     // Create a new tree
     const tree = new RepTree('peer1');
 
-    const rootVertex = tree.createRoot();
-    rootVertex.name = 'Project';
+    const rootNode = tree.createRoot();
+    rootNode.name = 'Project';
 
     // Create a folder structure with properties
-    const docsFolder = rootVertex.newNamedChild('Docs');
+    const docsFolder = rootNode.newNamedChild('Docs');
     docsFolder.setProperties({
       type: 'folder',
       icon: 'folder-icon'
     });
 
-    const imagesFolder = rootVertex.newNamedChild('Images');
+    const imagesFolder = rootNode.newNamedChild('Images');
     imagesFolder.setProperties({
       type: 'folder',
       icon: 'image-icon'
@@ -47,15 +47,15 @@ describe('RepTree Basic Usage', () => {
     const docsFolderContents = docsFolder.children;
 
     // Verify the structure
-    expect(rootVertex.name).toBe('Project');
-    
+    expect(rootNode.name).toBe('Project');
+
     // Verify children
-    expect(rootVertex.childrenIds.length).toBe(2);
-    
+    expect(rootNode.childrenIds.length).toBe(2);
+
     // Verify docs folder content
     expect(docsFolder.childrenIds.length).toBe(2);
     expect(docsFolder.getProperty('type')).toBe('folder');
-    
+
     // Check if logo was moved successfully
     expect(docsFolderContents.some(child => child.id === logoFile.id)).toBe(true);
     expect(imagesFolder.childrenIds.length).toBe(0);
@@ -67,9 +67,9 @@ describe('RepTree Basic Usage', () => {
 
     // Verify that second tree has the same structure using the built-in compareStructure method
     expect(tree.compareStructure(otherTree)).toBe(true);
-    
+
     // Additional verification of a specific property to show how we could check individual elements
-    const otherRootVertex = otherTree.root;
-    expect(otherRootVertex?.name).toBe('Project');
+    const otherRootNode = otherTree.root;
+    expect(otherRootNode?.name).toBe('Project');
   });
-}); 
+});

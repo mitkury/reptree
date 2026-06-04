@@ -12,9 +12,9 @@ RepTree uses [CRDTs](https://crdt.tech/) for seamless replication between users.
 
 ## What it solves
 
-If you have a tree structure in your app where each vertex/node/leaf can be moved independently by multiple users, you need a solution that resolves conflicts when the same vertex is moved in different ways. Otherwise your tree can diverge or form loops. This includes folder structures (people creating and moving folders), 2D/3D scenes with objects being moved and parented, and Notion‑like documents where blocks with text and other properties are edited by users.
+If you have a tree structure in your app where each node/node/leaf can be moved independently by multiple users, you need a solution that resolves conflicts when the same node is moved in different ways. Otherwise your tree can diverge or form loops. This includes folder structures (people creating and moving folders), 2D/3D scenes with objects being moved and parented, and Notion‑like documents where blocks with text and other properties are edited by users.
 
-You probably also want properties on each vertex/node/leaf and to have them sync correctly between peers without conflicts. RepTree syncs properties too.
+You probably also want properties on each node/node/leaf and to have them sync correctly between peers without conflicts. RepTree syncs properties too.
 
 ## Getting started
 
@@ -22,7 +22,7 @@ You probably also want properties on each vertex/node/leaf and to have them sync
 npm install reptree
 ```
 
-### Example 1 
+### Example 1
 ```ts
 import { RepTree } from "reptree";
 
@@ -30,11 +30,11 @@ import { RepTree } from "reptree";
 const tree = new RepTree("company-org-1");
 const company = tree.createRoot();
 
-// Create a node (we call them vertices in RepTree) in the root of our new tree
+// Create a node (we call them nodes in RepTree) in the root of our new tree
 const devs = company.newNamedChild("developers");
 const qa = company.newNamedChild("qa");
 
-// Create a vertex in another vertex
+// Create a node in another node
 const alice = qa.newChild();
 
 // Set properties (supports any JSON-serializable values)
@@ -42,10 +42,10 @@ alice.setProperty("name", "Alice");
 alice.setProperty("age", 32);
 alice.setProperty("meta", { department: "QA", skills: ["cypress", "playwright"], flags: { lead: false } });
 
-// Move the vertex inside a different vertex
+// Move the node inside a different node
 alice.moveTo(devs);
 
-// Bind a vertex to a type to set its properties like regular fields
+// Bind a node to a type to set its properties like regular fields
 const bob = qa.newChild().bind<{ name: string; age: number }>();
 bob.name = "Bob";
 bob.age = 33;
@@ -294,16 +294,16 @@ The state vector functionality in RepTree:
 - Will automatically rebuild from existing operations when re-enabled
 - Uses `getStateVectors()` and `getMissingOps(stateVectors)` for range-based synchronization
 
-Property operations are last-writer-wins and are compacted to the latest operation per `(vertexId, key)`. The property state vector represents the retained compacted property operations that can be sent during sync, not a full audit history of every property write.
+Property operations are last-writer-wins and are compacted to the latest operation per `(nodeId, key)`. The property state vector represents the retained compacted property operations that can be sent during sync, not a full audit history of every property write.
 ---
 
-# From docs/reactive-vertices.md:
+# From docs/reactive-nodes.md:
 
-# Reactive Vertices
+# Reactive Nodes
 
-RepTree can expose a vertex as a live JavaScript object so you can read/write properties without thinking about CRDT plumbing.
+RepTree can expose a node as a live JavaScript object so you can read/write properties without thinking about CRDT plumbing.
 
-## Binding a Vertex
+## Binding a Node
 
 ```ts
 import { RepTree } from 'reptree';
@@ -322,25 +322,25 @@ person.meta = { nested: { a: 1 }, list: [1, 2, { b: true }] }; // JSON-serializa
 console.log(person.name); // 'Alice'
 ```
 
-### Vertex properties and methods
+### Node properties and methods
 
-Bound vertices expose tree navigation and manipulation via `$`-prefixed properties and methods (following Vue.js convention):
+Bound nodes expose tree navigation and manipulation via `$`-prefixed properties and methods (following Vue.js convention):
 
 ```ts
 const bound = v.bind();
 
 // Properties (read-only)
-bound.$id            // vertex ID
-bound.$parentId      // parent vertex ID or null
-bound.$parent        // parent Vertex instance or undefined
-bound.$children      // array of child Vertex instances
+bound.$id            // node ID
+bound.$parentId      // parent node ID or null
+bound.$parent        // parent Node instance or undefined
+bound.$children      // array of child Node instances
 bound.$childrenIds   // array of child IDs
 
 // Methods
-bound.$moveTo(parent)              // move to new parent (accepts Vertex, BindedVertex, or ID)
-bound.$delete()                    // delete vertex (moves to NULL parent)
-bound.$newChild(props)             // create child vertex
-bound.$newNamedChild(name, props)  // create named child vertex
+bound.$moveTo(parent)              // move to new parent (accepts Node, BindedNode, or ID)
+bound.$delete()                    // delete node (moves to NULL parent)
+bound.$newChild(props)             // create child node
+bound.$newNamedChild(name, props)  // create named child node
 bound.$observe(listener)           // observe changes, returns unsubscribe function
 bound.$observeChildren(listener)   // observe children changes
 ```
@@ -348,8 +348,8 @@ bound.$observeChildren(listener)   // observe children changes
 Example usage:
 
 ```ts
-const folderVertex = tree.getVertex(folderId);
-const folder = folderVertex.bind(FolderSchema);
+const folderNode = tree.getNode(folderId);
+const folder = folderNode.bind(FolderSchema);
 
 // Create and manipulate children
 const file = folder.$newNamedChild('README.md', { size: 1024 });
@@ -363,7 +363,7 @@ const unobserve = folder.$observeChildren(children => {
 // Later: unobserve()
 ```
 
-All vertex properties and methods are read-only and cannot be overwritten.
+All node properties and methods are read-only and cannot be overwritten.
 
 ### Field behavior
 
@@ -395,7 +395,7 @@ person.age = 34;     // ok, validated
 ```
 
 **How it works**:
-- Bound vertices are Proxies for dynamic property access
+- Bound nodes are Proxies for dynamic property access
 - If a schema is provided, writes are validated using field-level validation via `schema.shape`
 
 ## Transient writes (drafts)
@@ -431,7 +431,7 @@ Notes:
 
 ## Creating children with normalized props
 
-`vertex.newChild(props)` and `vertex.newNamedChild(name, props)` accept plain objects. RepTree will:
+`node.newChild(props)` and `node.newNamedChild(name, props)` accept plain objects. RepTree will:
 
 - Filter unsupported types (non-primitive objects)
 - Ignore `props.name` if `newNamedChild` receives an explicit `name` argument
@@ -451,11 +451,11 @@ const child2 = root.newNamedChild('Folder', { name: 'ignored', flag: true });
 
 ## Integration Notes
 
-- Bound vertices are framework-agnostic JavaScript objects (via Proxy)
-- Use your UI framework's preferred state mechanism to manage references to bound vertices
+- Bound nodes are framework-agnostic JavaScript objects (via Proxy)
+- Use your UI framework's preferred state mechanism to manage references to bound nodes
 
 ## Notes
 
 - This is opt-in; core remains free of a hard Zod dependency. The helper accepts any schema-like with `safeParse` and optional `shape`.
-- For snapshot validation instead of a live object, use `tree.parseVertex(id, schema)`.
+- For snapshot validation instead of a live object, use `tree.parseNode(id, schema)`.
 - Yjs integration is not included in this branch. See `docs/yjs.md` and the `yjs-2025` branch for details.

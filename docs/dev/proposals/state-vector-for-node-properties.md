@@ -1,7 +1,7 @@
 # Proposal: Property Sync with Compacted State Vectors
 
 ## Summary
-Property operations are LWW per `(vertexId, key)`, so we only need the latest op per key for sync. This proposal ensures that when syncing property ops using state vectors, we always send only the **compacted** (latest-per-key) operations, avoiding redundant ops that would be discarded due to LWW semantics.
+Property operations are LWW per `(nodeId, key)`, so we only need the latest op per key for sync. This proposal ensures that when syncing property ops using state vectors, we always send only the **compacted** (latest-per-key) operations, avoiding redundant ops that would be discarded due to LWW semantics.
 
 ## Goals
 - Continue using range-based state vectors for property ops (same as move ops).
@@ -46,14 +46,14 @@ The existing sync protocol remains:
 2. Peer B calls `getMissingOps(peerAStateVectors)` → computes and sends ops to Peer A
 3. Peer A calls `merge(opsFromPeerB)`
 
-**Key point:** The sync signal is compact (~100-1000 bytes, scales with peers, not vertices).
+**Key point:** The sync signal is compact (~100-1000 bytes, scales with peers, not nodes).
 
 ### Ensuring Compacted Ops Are Sent
 
 The current implementation already does this correctly:
 
 ```ts
-getMissingOps(theirStateVectors: StateVectors): VertexOperation[] {
+getMissingOps(theirStateVectors: StateVectors): NodeOperation[] {
   // Move ops: existing range-based logic
   const missingMoveOps = /* ... existing logic ... */;
 
@@ -67,14 +67,14 @@ getMissingOps(theirStateVectors: StateVectors): VertexOperation[] {
   return [...missingMoveOps, ...missingPropOps];
 }
 
-private getPropertyOps(): SetVertexProperty[] {
+private getPropertyOps(): SetNodeProperty[] {
   // Returns only latest op per key (already compacted)
   return Array.from(this.propertyOpsByKey.values());
 }
 ```
 
 **How it works:**
-1. `propertyOpsByKey` stores only the latest op per `(vertexId, key)` (LWW compaction).
+1. `propertyOpsByKey` stores only the latest op per `(nodeId, key)` (LWW compaction).
 2. `getPropertyOps()` returns only these compacted ops.
 3. `filterOpsByRanges()` filters to ops that fall in missing ranges.
 4. Result: Only send compacted ops that receiver needs.
@@ -84,7 +84,7 @@ private getPropertyOps(): SetVertexProperty[] {
 When receiver applies property ops, LWW semantics handle duplicates:
 
 ```ts
-private applyLLWProperty(op: SetVertexProperty, targetVertex: VertexState) {
+private applyLLWProperty(op: SetNodeProperty, targetNode: NodeState) {
   const prevOpId = this.propertyOpsByKey.get(`${op.key}@${op.targetId}`)?.id;
 
   // Only apply if this op is newer (or first time)
@@ -103,7 +103,7 @@ If sender sends an op the receiver already has a newer version of, it's safely d
 - **Already sends compacted ops** - `propertyOpsByKey` ensures only latest per key.
 - **Handles edge cases** - Receiver's LWW logic safely discards redundant ops.
 - **No protocol changes** - Uses existing state vector mechanism.
-- **Scales well** - Sync signal size independent of vertex/property count.
+- **Scales well** - Sync signal size independent of node/property count.
 
 ## Size Comparison
 
@@ -118,7 +118,7 @@ If sender sends an op the receiver already has a newer version of, it's safely d
 ```
 - Size: ~100-1000 bytes (only peer IDs + number ranges)
 - Scales with: Number of peers (typically 10-100)
-- Independent of: Number of vertices or properties
+- Independent of: Number of nodes or properties
 
 **What We Send (Ops):**
 - Only property ops that:
@@ -129,13 +129,13 @@ If sender sends an op the receiver already has a newer version of, it's safely d
 ## Potential Inefficiency
 
 **Minor inefficiency:** We might send a few ops that the receiver already has a newer version of. However:
-- The sync signal remains compact (scales with peers, not vertices).
+- The sync signal remains compact (scales with peers, not nodes).
 - The receiver's LWW logic safely handles and discards redundant ops.
-- The alternative (digest) would require sending vertex IDs for every property (~300MB for 1M vertices), which is far worse.
+- The alternative (digest) would require sending node IDs for every property (~300MB for 1M nodes), which is far worse.
 
 **Example:**
-- Sender has: `vertex1:name = op1000`
-- Receiver has: `vertex1:name = op1001` (newer)
+- Sender has: `node1:name = op1000`
+- Receiver has: `node1:name = op1001` (newer)
 - State vector says receiver missing range [800, 1000]
 - Sender sends op1000
 - Receiver applies, sees op1001 is newer, discards op1000
@@ -157,6 +157,6 @@ The current implementation already follows this approach:
 Continue using state vectors for property ops. The current implementation correctly:
 1. Maintains LWW compaction in `propertyOpsByKey`
 2. Sends only compacted ops during sync
-3. Keeps sync signal compact (scales with peers, not vertices)
+3. Keeps sync signal compact (scales with peers, not nodes)
 
-The minor inefficiency of potentially sending a few redundant ops is acceptable given the massive advantage of a compact sync signal that doesn't scale with vertex count.
+The minor inefficiency of potentially sending a few redundant ops is acceptable given the massive advantage of a compact sync signal that doesn't scale with node count.

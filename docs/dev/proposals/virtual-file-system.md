@@ -16,7 +16,7 @@ RepFS is a local-first, CRDT-backed virtual filesystem kernel, embeddable in any
 - **Extensibility**: Allow third parties to mount their own data sources (cloud storage, APIs) into the same collaborative hierarchy.
 
 ## Guiding Principles
-- **Structure in RepTree, bytes elsewhere**: Vertices encode hierarchy, metadata, and references; actual file contents live in CAS or pluggable content stores.
+- **Structure in RepTree, bytes elsewhere**: Nodes encode hierarchy, metadata, and references; actual file contents live in CAS or pluggable content stores.
 - **Local-first**: Every node can operate offline; syncing reconciles via CRDT moves and last-writer-wins properties.
 - **Predictable semantics**: Filesystem operations map to deterministic CRDT operations; no hidden merge logic.
 - **Composable mounts**: Multiple spaces, repositories, or external stores can mount into the same namespace with explicit boundaries.
@@ -26,11 +26,11 @@ RepFS is a local-first, CRDT-backed virtual filesystem kernel, embeddable in any
 ## System Architecture
 
 ### 1. Structural Layer (RepTree)
-- **Vertex Types**:
+- **Node Types**:
   - `RootMount`: entry points representing projects, spaces, or external providers.
   - `Directory`: folders containing children.
   - `File`: metadata node pointing to content references (text, binary, CRDT doc).
-  - `Symlink / Shortcut`: references to other vertices, supporting virtual mounts.
+  - `Symlink / Shortcut`: references to other nodes, supporting virtual mounts.
   - `Metadata`: arbitrary key/value descriptors (tags, permissions, owners).
 - **Properties**:
   - `name`, `slug`, `mtime`, `creator`, `sizeHint`, `casRef`, `docRef`, `contentType`, `visibility`, `acl`.
@@ -62,7 +62,7 @@ RepFS is a local-first, CRDT-backed virtual filesystem kernel, embeddable in any
 ### 5. Observability Layer
 - **Event Stream**: Emits structured events (`FILE_CREATED`, `MOUNT_ATTACHED`, `DOC_UPDATED`) for app integrations.
 - **Indexing**: Optional pluggable search indexing (full-text, metadata) fed via CRDT updates.
-- **Audit Trail**: Operation history per vertex for time-travel and undo/redo semantics.
+- **Audit Trail**: Operation history per node for time-travel and undo/redo semantics.
 
 ## API Surface (Conceptual)
 
@@ -91,19 +91,19 @@ RepFS is a local-first, CRDT-backed virtual filesystem kernel, embeddable in any
 
 ### Creating a New Document
 1. Client calls `vfs.writeFile('/notes/daily.md', initialText, { adapter: 'crdt' })`.
-2. Kernel creates `File` vertex with `docRef` referencing a newly created CRDT doc.
+2. Kernel creates `File` node with `docRef` referencing a newly created CRDT doc.
 3. RepTree logs operations (`CREATE`, `SET_PROPERTY`) and updates state vector.
 4. CRDT adapter appends ops to document store; optional checkpoint generated.
 5. Other peers sync: apply RepTree ops, fetch CRDT doc ops, display updated file.
 
 ### Uploading a Binary
 1. Client streams chunks to CAS, receiving `contentAddress`.
-2. Kernel sets `casRef` on the corresponding `File` vertex with metadata (`size`, `sha256`, `mime`).
+2. Kernel sets `casRef` on the corresponding `File` node with metadata (`size`, `sha256`, `mime`).
 3. Readers fetch CAS content on demand; offline clients cache locally.
 
 ### Mounting External Data
-1. Administrator creates `RootMount` vertex pointing to external provider.
-2. Adapter lazily materializes directory listings into RepTree vertices with metadata only.
+1. Administrator creates `RootMount` node pointing to external provider.
+2. Adapter lazily materializes directory listings into RepTree nodes with metadata only.
 3. Access operations proxy reads/writes to provider via adapter; optional caching to CAS.
 
 ## Cross-Platform Considerations
@@ -133,7 +133,7 @@ RepFS is a local-first, CRDT-backed virtual filesystem kernel, embeddable in any
   - Support `vfs checkout <stateVector>` for read-only historical views.
 
 ## Security & Permissions
-- **ACL Propagation**: Store permission sets on vertices; enforce during operations.
+- **ACL Propagation**: Store permission sets on nodes; enforce during operations.
 - **Capability Tokens**: Issue scoped tokens for agents, specifying allowed paths and operations.
 - **Audit Logging**: Append signed operation records for compliance.
 - **Encryption**: Optionally encrypt CAS payloads per mount using symmetric keys managed via metadata.
@@ -141,7 +141,7 @@ RepFS is a local-first, CRDT-backed virtual filesystem kernel, embeddable in any
 ## Performance & Scaling
 - **Chunked sync**: Transfer operations in batches keyed by mount or directory to reduce conflict windows.
 - **Lazy hydration**: Fetch child lists and content references on demand with caching.
-- **Compaction**: Periodically consolidate CRDT doc ops with checkpoints; prune tombstoned vertices.
+- **Compaction**: Periodically consolidate CRDT doc ops with checkpoints; prune tombstoned nodes.
 - **Index Services**: Optional background worker builds search indexes for content and metadata.
 
 ## Implementation Phases
@@ -158,7 +158,7 @@ RepFS is a local-first, CRDT-backed virtual filesystem kernel, embeddable in any
 - How do we enforce quota and eviction policies for large binary blobs?
 - Can we offer transactional semantics across multiple files without sacrificing CRDT guarantees?
 - How do we surface merge conflicts or LWW overwrites to users for manual resolution?
- 
+
 ## Success Criteria
 - Teams can embed the VFS to share collaborative folders/files across their apps with minimal integration effort.
 - Agents and humans operate on the same filesystem abstraction using standard tools.

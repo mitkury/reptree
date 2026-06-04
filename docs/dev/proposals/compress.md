@@ -29,8 +29,8 @@ The snapshot generation process:
 
 1. Create a new, empty RepTree instance
 2. Generate a minimal, canonical set of operations that would construct the current tree state:
-   - For each vertex: one Move op to its parent (root uses `null`), which implicitly creates the vertex
-   - Set `_c` creation timestamp (ISO string) for each vertex
+   - For each node: one Move op to its parent (root uses `null`), which implicitly creates the node
+   - Set `_c` creation timestamp (ISO string) for each node
    - Emit Set property ops for every current LWW property
    - For Yjs-backed properties: emit a single Set op whose value embeds `Y.encodeStateAsUpdate(doc)` so receivers can reconstruct full state efficiently
    - Order ops root-first (or BFS) for faster construction; correctness is preserved regardless thanks to pending queues
@@ -54,7 +54,7 @@ Define a `barrierByPeer: Record<peerId, number>` that records the minimum accept
 
 1. **Identify Compression Candidates**: Determine which operations can be safely compressed (typically operations older than a certain threshold)
 2. **Generate Minimal Operation Set**:
-   - Create vertex creation operations for all existing vertices
+   - Create node creation operations for all existing nodes
    - Generate property setting operations for current property values
    - Create parent-child relationship operations for the current tree structure
 3. **Replace Original Operations**: Substitute the original operations with the compressed set
@@ -102,7 +102,7 @@ Handling compression in a distributed environment:
 ### 4. Local pruning without full snapshots
 
 Even without a full snapshot rollout, replicas can safely prune history in-place when combined with barriers:
-- For LWW properties per `(vertexId, key)`, keep only the latest Set op and drop older ones
+- For LWW properties per `(nodeId, key)`, keep only the latest Set op and drop older ones
 - For Yjs modify ops on the same key, coalesce the sequence into a single Set op containing the full encoded Yjs state, then drop prior modifies
 - This requires barriers so no peer requests pre-barrier counters that were pruned
 
@@ -156,10 +156,10 @@ interface CompressionOptions {
 // RepTree class extensions
 class RepTree {
   // ...existing methods...
-  
+
   // Compress operations up to a specific point
   compress(upToTimestamp?: number): void;
-  
+
   // Get information about the current compression state
   getCompressionInfo(): {
     compressionPoint: number | null;
@@ -168,13 +168,13 @@ class RepTree {
     barrierByPeer: Record<string, number>;
     snapshotHash: string | null;
   };
-  
+
   // Configure compression behavior
   setCompressionOptions(options: Partial<CompressionOptions>): void;
 
   // Install a compressed state received from a peer (server-driven)
   installCompressedState(input: {
-    snapshotOps: VertexOperation[];
+    snapshotOps: NodeOperation[];
     baseStateVector: Record<string, number[][]>;
     barrierByPeer: Record<string, number>;
     snapshotHash?: string;
@@ -198,7 +198,7 @@ class RepTree {
 
 ```typescript
 // Build a canonical snapshot op set from a live tree
-function buildSnapshotOps(tree: RepTree): VertexOperation[];
+function buildSnapshotOps(tree: RepTree): NodeOperation[];
 
 // Filter a state vector to post-barrier ranges
 function buildBaseStateVectorAfterBarrier(

@@ -28,7 +28,7 @@ describe('JSON property values', () => {
     const t2 = new RepTree('B');
     t2.merge(ops);
 
-    const v2 = t2.getVertex(v.id)!;
+    const v2 = t2.getNode(v.id)!;
     expect(v2.getProperty('meta')).toEqual({ version: 2, flags: { archived: true } });
   });
 

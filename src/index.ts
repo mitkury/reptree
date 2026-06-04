@@ -2,8 +2,8 @@
 export { RepTree } from './RepTree';
 
 // Core types and classes
-export { Vertex } from './Vertex';
-export { VertexState } from './VertexState';
+export { Node } from './Node';
+export { NodeState } from './NodeState';
 export { TreeState } from './TreeState';
 export * from './OpId';
 export { StateVector } from './StateVector';
@@ -16,5 +16,5 @@ export * from './operations';
 export { default as uuid } from './utils/uuid';
 
 // Reactive helpers (opt-in)
-export { bindVertex } from './reactive';
-export type { BindedVertex, SchemaLike, BindOptions } from './reactive';
+export { bindNode } from './reactive';
+export type { BindedNode, SchemaLike, BindOptions } from './reactive';

@@ -1,12 +1,12 @@
 # Proposal: Separate Operation Streams and Lamport Clocks
 
 ## Summary
-RepTree currently treats all operations as a single sequence with a single Lamport counter per peer. This proposal suggests splitting operations into distinct streams—at minimum **move operations** and **property operations**—with separate Lamport clocks and state vectors. Property operations are last-writer-wins (LWW), so we can retain only the latest op per `(vertexId, key)` and avoid carrying full property histories. This separation improves storage efficiency and sync performance while preserving correctness.
+RepTree currently treats all operations as a single sequence with a single Lamport counter per peer. This proposal suggests splitting operations into distinct streams—at minimum **move operations** and **property operations**—with separate Lamport clocks and state vectors. Property operations are last-writer-wins (LWW), so we can retain only the latest op per `(nodeId, key)` and avoid carrying full property histories. This separation improves storage efficiency and sync performance while preserving correctness.
 
 ## Goals
 - Separate **move** and **property** operations into distinct log streams.
 - Maintain **independent Lamport clocks** and **state vectors** per stream.
-- Allow **LWW property ops to be compacted** to only the latest per `(vertexId, key)`.
+- Allow **LWW property ops to be compacted** to only the latest per `(nodeId, key)`.
 - Keep sync semantics correct and deterministic.
 - Make it easier to evolve op types (future streams) without affecting others.
 
@@ -36,12 +36,12 @@ Each stream has:
 Future extension: add streams for other CRDTs (e.g., text, presence) without impacting existing streams.
 
 ### 2. Property ops are LWW and can be compacted
-Property operations are LWW by `(vertexId, key)`:
+Property operations are LWW by `(nodeId, key)`:
 - The **latest op** (by `(counter, peerId)` tiebreak) fully represents the state for that key.
 - Historical property ops are not required for correctness and can be discarded.
 
 #### Proposed storage shape
-- `propLatest: Map<vertexId, Map<key, PropOp>>`
+- `propLatest: Map<nodeId, Map<key, PropOp>>`
 - Optional `propLog` for debugging or audit, but not required for sync.
 
 #### Compaction
@@ -56,7 +56,7 @@ Replication exchanges **two state vectors**:
 
 #### Property sync optimization
 Instead of shipping all property ops:
-- For each peer range missing, filter only the latest ops per `(vertexId, key)` that fall in missing ranges.
+- For each peer range missing, filter only the latest ops per `(nodeId, key)` that fall in missing ranges.
 - In practice, many keys resolve to a single op per key regardless of history.
 
 ### 4. Lamport ordering remains per stream
@@ -66,7 +66,7 @@ Lamport ordering is only used within a stream. This avoids cross-stream ordering
 
 ### 5. Sync application order
 Apply in the following order for deterministic results:
-1. Apply missing move ops (ensure vertices exist/parented).
+1. Apply missing move ops (ensure nodes exist/parented).
 2. Apply property ops (LWW merges by stream-local clock).
 
 ## API/Schema Implications
@@ -101,7 +101,7 @@ Apply in the following order for deterministic results:
 ### Trade-offs / Risks
 - **Complexity**: multiple clocks/state vectors to manage.
 - **Protocol changes**: peers need to understand stream separation.
-- **Edge cases**: property ops arriving before a vertex exists (requires buffering or applying after move ops).
+- **Edge cases**: property ops arriving before a node exists (requires buffering or applying after move ops).
 
 ### Correctness Considerations
 - LWW requires deterministic tie-breaking: `(counter, peerId)` within **property stream**.
@@ -119,7 +119,7 @@ Apply in the following order for deterministic results:
   - Sync ordering and correctness when ops interleave.
 
 ## Open Questions
-- Do we want separate counters per **vertex** for properties (optional optimization)?
+- Do we want separate counters per **node** for properties (optional optimization)?
 - Should property state vector track **latest counter per peer** only, even if we compact ops?
 - How to represent property deletes (e.g., tombstone op vs explicit unset)?
 
