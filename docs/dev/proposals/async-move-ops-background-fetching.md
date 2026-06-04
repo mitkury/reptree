@@ -10,7 +10,7 @@
 
 ## Data structures
 - OperationStore (sliding window) with head/tail watermarks.
-- Provisional flags per op/vertex (e.g., position provisional until a counter/watermark).
+- Provisional flags per op/node (e.g., position provisional until a counter/watermark).
 - Range-based `StateVector` to compute missing older ranges efficiently.
 
 ## Windowed state vector + offloaded ops

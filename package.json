@@ -1,6 +1,6 @@
 {
   "name": "reptree",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "description": "A tree data structure using CRDTs for seamless replication between peers",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -18,7 +18,6 @@
     "README.md"
   ],
   "scripts": {
-    "prepare": "npx airul gen",
     "prebuild": "rm -rf dist",
     "build": "tsup",
     "dev": "tsup --watch",
@@ -43,7 +42,6 @@
     "url": "https://github.com/mitkury/reptree/issues"
   },
   "devDependencies": {
-    "airul": "^0.1.39",
     "ts-node": "^10.9.1",
     "tsup": "^8.0.1",
     "typescript": "^5.2.2",

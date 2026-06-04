@@ -1,148 +1,150 @@
 import {
-  newMoveVertexOp,
-  type MoveVertex,
-  type SetVertexProperty,
-  isMoveVertexOp,
-  type VertexOperation,
-  newSetVertexPropertyOp,
-  newSetTransientVertexPropertyOp,
+  newMoveNodeOp,
+  type MoveNode,
+  type SetNodeProperty,
+  isMoveNodeOp,
+  type NodeOperation,
+  newSetNodePropertyOp,
+  newSetTransientNodePropertyOp,
   isAnyPropertyOp
 } from "./operations";
-import type { VertexPropertyType, TreeVertexProperty, VertexChangeEvent, TreeVertexId, VertexMoveEvent } from "./treeTypes";
-import { VertexState } from "./VertexState";
+import type { NodePropertyType, TreeNodeProperty, NodeChangeEvent, TreeNodeId, NodeMoveEvent, StateVectors } from "./treeTypes";
+import { NodeState } from "./NodeState";
 import { TreeState } from "./TreeState";
 import { type OpId, compareOpId, equalsOpId, isOpIdGreaterThan, opIdToString } from "./OpId";
 import uuid from "./utils/uuid";
-import { Vertex } from './Vertex';
+import { Node } from './Node';
 import { StateVector } from './StateVector';
 import deepEqual from './utils/deepEqual';
 import isJsonValue from './utils/isJsonValue';
 
-type PropertyKeyAtVertexId = `${string}@${TreeVertexId}`;
+type PropertyKeyAtNodeId = `${string}@${TreeNodeId}`;
 
 /**
- * RepTree is a tree data structure for storing vertices with properties.
+ * RepTree is a tree data structure for storing nodes with properties.
  * It uses 2 conflict-free replicated data types (CRDTs) to manage seamless replication between peers.
  * A move tree CRDT is used for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
  * A last writer wins (LWW) CRDT is used for properties.
  */
 export class RepTree {
-  private static NULL_VERTEX_ID = '0';
+  private static NULL_NODE_ID = '0';
 
   readonly peerId: string;
-  private rootVertexId: string | undefined;
+  private rootNodeId: string | undefined;
 
-  private lamportClock = 0;
+  private moveClock = 0;
+  private propClock = 0;
   private state: TreeState;
-  private moveOps: MoveVertex[] = [];
-  private setPropertyOps: SetVertexProperty[] = [];
-  private propertiesAndTheirOpIds: Map<PropertyKeyAtVertexId, OpId> = new Map();
-  private transientPropertiesAndTheirOpIds: Map<PropertyKeyAtVertexId, OpId> = new Map();
-  private localOps: VertexOperation[] = [];
-  private pendingMovesWithMissingParent: Map<string, MoveVertex[]> = new Map();
-  private pendingPropertiesWithMissingVertex: Map<string, SetVertexProperty[]> = new Map();
+  private moveOps: MoveNode[] = [];
+  private propertyOpsByKey: Map<PropertyKeyAtNodeId, SetNodeProperty> = new Map();
+  private transientPropertiesAndTheirOpIds: Map<PropertyKeyAtNodeId, OpId> = new Map();
+  private localOps: NodeOperation[] = [];
+  private pendingMovesWithMissingParent: Map<string, MoveNode[]> = new Map();
+  private pendingPropertiesWithMissingNode: Map<string, SetNodeProperty[]> = new Map();
   private knownOps: Set<string> = new Set();
   private parentIdBeforeMove: Map<OpId, string | null | undefined> = new Map();
-  private opAppliedCallbacks: ((op: VertexOperation) => void)[] = [];
+  private opAppliedCallbacks: ((op: NodeOperation) => void)[] = [];
 
   // State vector tracking operations from each peer
-  private stateVector: StateVector;
+  private moveStateVector: StateVector;
+  private propStateVector: StateVector;
   private _stateVectorEnabled: boolean = true;
 
   /**
    * @param peerId - The peer ID of the current client. Should be unique across all peers.
-   * @param ops - The operations to replicate an existing tree, if not provided - an empty tree will be created without a root vertex
+   * @param ops - The operations to replicate an existing tree, if not provided - an empty tree will be created without a root node
    */
-  constructor(peerId: string, ops?: ReadonlyArray<VertexOperation>) {
+  constructor(peerId: string, ops?: ReadonlyArray<NodeOperation>) {
     this.peerId = peerId;
     this.state = new TreeState();
 
     // Initialize state vector (enabled by default)
-    this.stateVector = new StateVector();
+    this.moveStateVector = new StateVector();
+    this.propStateVector = new StateVector();
 
     if (ops && ops.length > 0) {
       this.applyOps(ops);
 
       const root = this.root;
       if (!root) {
-        throw new Error('There has to be a root vertex in the operations');
+        throw new Error('There has to be a root node in the operations');
       }
 
       // @TODO: validate the tree structure, throw an exception if it's invalid
     }
     else {
-      // @TODO: consider to remove it. It creates an extra null vertex op in every new empty tree. We probably don't need to do it.
-      this.ensureNullVertex();
+      // @TODO: consider to remove it. It creates an extra null node op in every new empty tree. We probably don't need to do it.
+      this.ensureNullNode();
     }
   }
 
-  get root(): Vertex | undefined {
+  get root(): Node | undefined {
     // In case if the root was created from the ops (not explicitly), then we need to find it in the state.
-    if (!this.rootVertexId) {
-      const vertices = this.state.getAllVertices();
-      for (const vertex of vertices) {
-        if (vertex.parentId === null && vertex.id !== RepTree.NULL_VERTEX_ID) {
-          this.rootVertexId = vertex.id;
-          return new Vertex(this, vertex);
+    if (!this.rootNodeId) {
+      const nodes = this.state.getAllNodes();
+      for (const node of nodes) {
+        if (node.parentId === null && node.id !== RepTree.NULL_NODE_ID) {
+          this.rootNodeId = node.id;
+          return new Node(this, node);
         }
       }
 
       return undefined;
     }
 
-    const rootVertex = this.state.getVertex(this.rootVertexId);
-    if (!rootVertex) {
-      throw new Error("Root vertex not found");
+    const rootNode = this.state.getNode(this.rootNodeId);
+    if (!rootNode) {
+      throw new Error("Root node not found");
     }
 
-    return new Vertex(this, rootVertex);
+    return new Node(this, rootNode);
   }
 
   replicate(newPeerId: string): RepTree {
     return new RepTree(newPeerId, this.getAllOps());
   }
 
-  getMoveOps(): ReadonlyArray<MoveVertex> {
+  getMoveOps(): ReadonlyArray<MoveNode> {
     return this.moveOps;
   }
 
-  getAllOps(): ReadonlyArray<VertexOperation> {
-    return [...this.moveOps, ...this.setPropertyOps];
+  getAllOps(): ReadonlyArray<NodeOperation> {
+    return [...this.moveOps, ...this.getPropertyOps()];
   }
 
-  getVertex(vertexId: string): Vertex | undefined {
-    const vertex = this.state.getVertex(vertexId);
-    return vertex ? new Vertex(this, vertex) : undefined;
+  getNode(nodeId: string): Node | undefined {
+    const node = this.state.getNode(nodeId);
+    return node ? new Node(this, node) : undefined;
   }
 
-  getAllVertices(): ReadonlyArray<Vertex> {
-    return this.state.getAllVertices().map(v => new Vertex(this, v));
+  getAllNodes(): ReadonlyArray<Node> {
+    return this.state.getAllNodes().map(v => new Node(this, v));
   }
 
-  getParent(vertexId: string): Vertex | undefined {
-    const parentId = this.state.getVertex(vertexId)?.parentId;
-    const parent = parentId ? this.state.getVertex(parentId) : undefined;
-    return parent ? new Vertex(this, parent) : undefined;
+  getParent(nodeId: string): Node | undefined {
+    const parentId = this.state.getNode(nodeId)?.parentId;
+    const parent = parentId ? this.state.getNode(parentId) : undefined;
+    return parent ? new Node(this, parent) : undefined;
   }
 
-  getChildren(vertexId: string): Vertex[] {
-    return this.state.getChildren(vertexId).map(v => new Vertex(this, v));
+  getChildren(nodeId: string): Node[] {
+    return this.state.getChildren(nodeId).map(v => new Node(this, v));
   }
 
-  getChildrenIds(vertexId: string): string[] {
-    return this.state.getChildrenIds(vertexId);
+  getChildrenIds(nodeId: string): string[] {
+    return this.state.getChildrenIds(nodeId);
   }
 
-  /** Returns the ancestors of the given vertex. The first element is the root vertex. */
-  getAncestors(vertexId: string): Vertex[] {
-    const ancestors: Vertex[] = [];
-    let currentVertex = this.state.getVertex(vertexId);
+  /** Returns the ancestors of the given node. The first element is the root node. */
+  getAncestors(nodeId: string): Node[] {
+    const ancestors: Node[] = [];
+    let currentNode = this.state.getNode(nodeId);
 
-    while (currentVertex && currentVertex.parentId) {
-      const parentVertex = this.state.getVertex(currentVertex.parentId);
-      if (parentVertex) {
-        ancestors.push(new Vertex(this, parentVertex));
-        currentVertex = parentVertex;
+    while (currentNode && currentNode.parentId) {
+      const parentNode = this.state.getNode(currentNode.parentId);
+      if (parentNode) {
+        ancestors.push(new Node(this, parentNode));
+        currentNode = parentNode;
       } else {
         break;
       }
@@ -151,134 +153,134 @@ export class RepTree {
     return ancestors;
   }
 
-  getVertexProperty(vertexId: string, key: string, includingTransient: boolean = true): VertexPropertyType | undefined {
-    const vertex = this.state.getVertex(vertexId);
-    if (!vertex) {
+  getNodeProperty(nodeId: string, key: string, includingTransient: boolean = true): NodePropertyType | undefined {
+    const node = this.state.getNode(nodeId);
+    if (!node) {
       return undefined;
     }
 
-    return vertex.getProperty(key, includingTransient);
+    return node.getProperty(key, includingTransient);
   }
 
-  getVertexProperties(vertexId: string): Readonly<TreeVertexProperty[]> {
-    const vertex = this.state.getVertex(vertexId);
-    if (!vertex) {
+  getNodeProperties(nodeId: string): Readonly<TreeNodeProperty[]> {
+    const node = this.state.getNode(nodeId);
+    if (!node) {
       return [];
     }
 
-    return vertex.getAllProperties();
+    return node.getAllProperties();
   }
 
   /**
    * Returns all local operations and clears the local operations list.
    * Can be used to get all operations that were generated from this peer and need to be sent to other peers.
    */
-  popLocalOps(): VertexOperation[] {
+  popLocalOps(): NodeOperation[] {
     const ops = this.localOps;
     this.localOps = [];
     return ops;
   }
 
   /**
-   * This is the first vertex that will contain all other vertices.
+   * This is the first node that will contain all other nodes.
    * If you plan to replicate a tree then don't use this method and instead merge
-   * in the ops from another tree (that will also contain the root vertex).
-   * @returns The root vertex
+   * in the ops from another tree (that will also contain the root node).
+   * @returns The root node
    */
-  createRoot(): Vertex {
-    if (this.rootVertexId) {
-      throw new Error('Root vertex already exists');
+  createRoot(): Node {
+    if (this.rootNodeId) {
+      throw new Error('Root node already exists');
     }
 
-    this.rootVertexId = this.newVertexInternalWithUUID(null);
+    this.rootNodeId = this.newNodeInternalWithUUID(null);
 
-    const rootVertex = this.state.getVertex(this.rootVertexId);
-    if (!rootVertex) {
-      throw new Error("Root vertex not found");
+    const rootNode = this.state.getNode(this.rootNodeId);
+    if (!rootNode) {
+      throw new Error("Root node not found");
     }
 
-    return new Vertex(this, rootVertex);
+    return new Node(this, rootNode);
   }
 
-  newVertex(parentId: string, props: Record<string, VertexPropertyType> | object | null = null): Vertex {
-    const typedProps = props as Record<string, VertexPropertyType> | null;
-    const vertexId = this.newVertexInternalWithUUID(parentId);
+  newNode(parentId: string, props: Record<string, NodePropertyType> | object | null = null): Node {
+    const typedProps = props as Record<string, NodePropertyType> | null;
+    const nodeId = this.newNodeInternalWithUUID(parentId);
     if (typedProps) {
-      this.setVertexProperties(vertexId, typedProps);
+      this.setNodeProperties(nodeId, typedProps);
     }
 
-    const vertex = this.state.getVertex(vertexId);
-    if (!vertex) {
-      throw new Error('Failed to create vertex');
+    const node = this.state.getNode(nodeId);
+    if (!node) {
+      throw new Error('Failed to create node');
     }
-    return new Vertex(this, vertex);
+    return new Node(this, node);
   }
 
-  newNamedVertex(parentId: string, name: string, props: Record<string, VertexPropertyType> | object | null = null): Vertex {
-    const typedProps = props as Record<string, VertexPropertyType> | null;
-    const vertexId = this.newVertexInternalWithUUID(parentId);
+  newNamedNode(parentId: string, name: string, props: Record<string, NodePropertyType> | object | null = null): Node {
+    const typedProps = props as Record<string, NodePropertyType> | null;
+    const nodeId = this.newNodeInternalWithUUID(parentId);
     if (typedProps) {
-      this.setVertexProperties(vertexId, typedProps);
+      this.setNodeProperties(nodeId, typedProps);
     }
-    this.setVertexProperty(vertexId, 'name', name);
+    this.setNodeProperty(nodeId, 'name', name);
 
-    const vertex = this.state.getVertex(vertexId);
-    if (!vertex) {
-      throw new Error('Failed to create named vertex');
+    const node = this.state.getNode(nodeId);
+    if (!node) {
+      throw new Error('Failed to create named node');
     }
-    return new Vertex(this, vertex);
+    return new Node(this, node);
   }
 
-  moveVertex(vertexId: string, parentId: string) {
-    this.lamportClock++;
-    const op = newMoveVertexOp(this.lamportClock, this.peerId, vertexId, parentId);
+  moveNode(nodeId: string, parentId: string) {
+    this.moveClock++;
+    const op = newMoveNodeOp(this.moveClock, this.peerId, nodeId, parentId);
     this.localOps.push(op);
     this.applyMove(op);
   }
 
-  deleteVertex(vertexId: string) {
-    this.moveVertex(vertexId, RepTree.NULL_VERTEX_ID);
+  deleteNode(nodeId: string) {
+    this.moveNode(nodeId, RepTree.NULL_NODE_ID);
   }
 
-  setTransientVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
+  setTransientNodeProperty(nodeId: string, key: string, value: NodePropertyType) {
     if (!isJsonValue(value)) {
       throw new Error(`Unsupported transient property value for key "${key}"`);
     }
 
-    this.lamportClock++;
-    const op = newSetTransientVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, value as VertexPropertyType);
+    this.propClock++;
+    const op = newSetTransientNodePropertyOp(this.propClock, this.peerId, nodeId, key, value as NodePropertyType);
     this.localOps.push(op);
     this.applyProperty(op);
   }
 
   /**
    * Promotes all transient (temporary) properties to persistent properties.
-   * @param vertexId - The ID of the vertex to commit transients for.
-   * @returns 
+   * @param nodeId - The ID of the node to commit transients for.
+   * @returns
    */
-  commitTransients(vertexId: string) {
-    const vertex = this.state.getVertex(vertexId);
-    if (!vertex) {
+  commitTransients(nodeId: string) {
+    const node = this.state.getNode(nodeId);
+    if (!node) {
       return;
     }
 
-    const transientProps = vertex.getTransientProperties();
+    const transientProps = node.getTransientProperties();
 
     // Promote each transient property to persistent
     for (const prop of transientProps) {
-      this.setVertexProperty(vertexId, prop.key, prop.value);
+      this.setNodeProperty(nodeId, prop.key, prop.value);
     }
 
     // Clear transient OpIds tracking
     for (const prop of transientProps) {
-      this.transientPropertiesAndTheirOpIds.delete(`${prop.key}@${vertexId}`);
+      this.transientPropertiesAndTheirOpIds.delete(`${prop.key}@${nodeId}`);
     }
 
-    // Clear all transient properties from the vertex
-    vertex.clearAllTransientProperties();
+    // Clear all transient properties from the node
+    node.clearAllTransientProperties();
   }
 
-  setVertexProperty(vertexId: string, key: string, value: VertexPropertyType) {
+  setNodeProperty(nodeId: string, key: string, value: NodePropertyType) {
     // Runtime validation for JSON-serializable values (undefined is allowed for deletion)
     const isJsonValue = (v: any): boolean => {
       if (v === undefined) return true; // deletion signal
@@ -305,50 +307,50 @@ export class RepTree {
       throw new Error(`Unsupported property value for key "${key}"`);
     }
 
-    this.lamportClock++;
-    const op = newSetVertexPropertyOp(this.lamportClock, this.peerId, vertexId, key, value as VertexPropertyType);
+    this.propClock++;
+    const op = newSetNodePropertyOp(this.propClock, this.peerId, nodeId, key, value as NodePropertyType);
     this.localOps.push(op);
     this.applyProperty(op);
   }
 
-  setVertexProperties(vertexId: string, props: Record<string, VertexPropertyType> | object) {
-    const typedProps = props as Record<string, VertexPropertyType>;
+  setNodeProperties(nodeId: string, props: Record<string, NodePropertyType> | object) {
+    const typedProps = props as Record<string, NodePropertyType>;
     for (const [key, value] of Object.entries(typedProps)) {
-      this.setVertexProperty(vertexId, key, value);
+      this.setNodeProperty(nodeId, key, value);
     }
   }
 
-  getVertexByPath(path: string): Vertex | undefined {
+  getNodeByPath(path: string): Node | undefined {
     // Let's remove '/' at the start and at the end of the path
     path = path.replace(/^\/+/, '');
     path = path.replace(/\/+$/, '');
 
     const pathParts = path.split('/');
 
-    if (!this.rootVertexId) {
+    if (!this.rootNodeId) {
       return undefined;
     }
 
-    const root = this.state.getVertex(this.rootVertexId);
+    const root = this.state.getNode(this.rootNodeId);
     if (!root) {
-      throw new Error('The root vertex is not found');
+      throw new Error('The root node is not found');
     }
 
-    const vertex = this.getVertexByPathArray(new Vertex(this, root), pathParts);
-    return vertex;
+    const node = this.getNodeByPathArray(new Node(this, root), pathParts);
+    return node;
   }
 
-  private getVertexByPathArray(vertex: Vertex, path: string[]): Vertex | undefined {
+  private getNodeByPathArray(node: Node, path: string[]): Node | undefined {
     if (path.length === 0) {
-      return vertex ?? undefined;
+      return node ?? undefined;
     }
 
     const targetName = path[0];
     // Now, search recursively by name 'name' in children until the path is empty or not found.
-    const children = this.getChildren(vertex.id);
+    const children = this.getChildren(node.id);
     for (const child of children) {
       if (child.getProperty('name') === targetName) {
-        return this.getVertexByPathArray(child, path.slice(1));
+        return this.getNodeByPathArray(child, path.slice(1));
       }
     }
 
@@ -356,14 +358,14 @@ export class RepTree {
   }
 
   printTree() {
-    if (!this.rootVertexId) {
+    if (!this.rootNodeId) {
       return '';
     }
 
-    return this.state.printTree(this.rootVertexId);
+    return this.state.printTree(this.rootNodeId);
   }
 
-  merge(ops: ReadonlyArray<VertexOperation>) {
+  merge(ops: ReadonlyArray<NodeOperation>) {
     /*
     if (ops.length > 100) {
       this.applyOpsOptimizedForLotsOfMoves(ops);
@@ -375,11 +377,22 @@ export class RepTree {
     this.applyOps(ops);
   }
 
-  private applyOps(ops: ReadonlyArray<VertexOperation>) {
-    for (const op of ops) {
+  private applyOps(ops: ReadonlyArray<NodeOperation>) {
+    const moveOps = ops.filter(op => isMoveNodeOp(op));
+    const propertyOps = ops.filter(op => isAnyPropertyOp(op));
+
+    for (const op of moveOps) {
       // We skip the operation if we already know about it.
       // This is to avoid processing the same operation multiple times.
-      if (this.knownOps.has(opIdToString(op.id))) {
+      if (this.knownOps.has(this.getOpKey(op))) {
+        continue;
+      }
+
+      this.applyOperation(op);
+    }
+
+    for (const op of propertyOps) {
+      if (this.knownOps.has(this.getOpKey(op))) {
         continue;
       }
 
@@ -388,11 +401,11 @@ export class RepTree {
   }
 
   /** Applies operations in an optimized way, sorting move ops by OpId to avoid undo-do-redo cycles */
-  private applyOpsOptimizedForLotsOfMoves(ops: ReadonlyArray<VertexOperation>) {
-    const newMoveOps = ops.filter(op => isMoveVertexOp(op) && !this.knownOps.has(opIdToString(op.id)));
+  private applyOpsOptimizedForLotsOfMoves(ops: ReadonlyArray<NodeOperation>) {
+    const newMoveOps = ops.filter(op => isMoveNodeOp(op) && !this.knownOps.has(this.getOpKey(op)));
     if (newMoveOps.length > 0) {
       // Get an array of all move ops (without already applied ones)
-      const allMoveOps = [...this.moveOps, ...newMoveOps] as MoveVertex[];
+      const allMoveOps = [...this.moveOps, ...newMoveOps] as MoveNode[];
       // The main point of this optimization is to apply the moves without undo-do-redo cycles (the conflict resolution algorithm).
       // That is why we sort by OpId.
       allMoveOps.sort((a, b) => compareOpId(a.id, b.id));
@@ -403,10 +416,10 @@ export class RepTree {
     }
 
     // Get an array of all property ops (without already applied ones)
-    const propertyOps = ops.filter(op => isAnyPropertyOp(op) && !this.knownOps.has(opIdToString(op.id)));
+    const propertyOps = ops.filter(op => isAnyPropertyOp(op) && !this.knownOps.has(this.getOpKey(op)));
     for (let i = 0, len = propertyOps.length; i < len; i++) {
       const op = propertyOps[i];
-      this.applyProperty(op as SetVertexProperty);
+      this.applyProperty(op as SetNodeProperty);
     }
   }
 
@@ -415,11 +428,11 @@ export class RepTree {
       return false;
     }
 
-    if (!this.rootVertexId) {
+    if (!this.rootNodeId) {
       return true;
     }
 
-    return RepTree.compareVertices(this.rootVertexId, this, other);
+    return RepTree.compareNodes(this.rootNodeId, this, other);
   }
 
   compareMoveOps(other: RepTree): boolean {
@@ -442,42 +455,42 @@ export class RepTree {
   /** Checks if the given `ancestorId` is an ancestor of `childId` in the tree */
   isAncestor(childId: string, ancestorId: string | null): boolean {
     let targetId = childId;
-    let vertex: VertexState | undefined;
+    let node: NodeState | undefined;
 
-    // Set to track visited vertices and detect cycles
-    const visitedVertices = new Set<string>();
+    // Set to track visited nodes and detect cycles
+    const visitedNodes = new Set<string>();
 
-    while (vertex = this.state.getVertex(targetId)) {
-      if (vertex.parentId === ancestorId) return true;
-      if (!vertex.parentId) return false;
+    while (node = this.state.getNode(targetId)) {
+      if (node.parentId === ancestorId) return true;
+      if (!node.parentId) return false;
 
-      // If we've already visited this vertex, we have a cycle
-      if (visitedVertices.has(targetId)) {
+      // If we've already visited this node, we have a cycle
+      if (visitedNodes.has(targetId)) {
         console.error(`isAncestor: cycle detected in the tree structure.`);
         // In the context of tryToMove, we should return false here to prevent the move
         // since the target ancestor isn't actually in the path (we're in a cycle)
         return false;
       }
 
-      // Mark this vertex as visited
-      visitedVertices.add(targetId);
+      // Mark this node as visited
+      visitedNodes.add(targetId);
 
-      targetId = vertex.parentId;
+      targetId = node.parentId;
     }
 
     return false;
   }
 
-  observeVertex(vertexId: string, callback: (updatedVertex: Vertex) => void): () => void {
-    const vertex = this.getVertex(vertexId);
-    if (vertex) {
-      callback(vertex);
+  observeNode(nodeId: string, callback: (updatedNode: Node) => void): () => void {
+    const node = this.getNode(nodeId);
+    if (node) {
+      callback(node);
     }
 
-    const unsubscribe = this.observe(vertexId, (_) => {
-      const vertex = this.getVertex(vertexId);
-      if (vertex) {
-        callback(vertex);
+    const unsubscribe = this.observe(nodeId, (_) => {
+      const node = this.getNode(nodeId);
+      if (node) {
+        callback(node);
       }
     });
 
@@ -486,13 +499,13 @@ export class RepTree {
     };
   }
 
-  observeVertexMove(callback: (movedVertex: Vertex, isNew: boolean) => void): () => void {
-    const listener = (events: VertexChangeEvent[]) => {
-      const moveEvent = events.find(e => e.type === 'move') as VertexMoveEvent | undefined;
+  observeNodeMove(callback: (movedNode: Node, isNew: boolean) => void): () => void {
+    const listener = (events: NodeChangeEvent[]) => {
+      const moveEvent = events.find(e => e.type === 'move') as NodeMoveEvent | undefined;
       if (moveEvent) {
-        const vertex = this.getVertex(moveEvent.vertexId);
-        if (vertex) {
-          callback(vertex, moveEvent.oldParentId === undefined);
+        const node = this.getNode(moveEvent.nodeId);
+        if (node) {
+          callback(node, moveEvent.oldParentId === undefined);
         }
       }
     };
@@ -502,28 +515,28 @@ export class RepTree {
     return () => this.state.removeGlobalChangeCallback(listener);
   }
 
-  observe(vertexId: string, callback: (events: VertexChangeEvent[]) => void): () => void {
-    this.state.addChangeCallback(vertexId, callback);
-    return () => this.state.removeChangeCallback(vertexId, callback);
+  observe(nodeId: string, callback: (events: NodeChangeEvent[]) => void): () => void {
+    this.state.addChangeCallback(nodeId, callback);
+    return () => this.state.removeChangeCallback(nodeId, callback);
   }
 
-  observeOpApplied(callback: (op: VertexOperation) => void): () => void {
+  observeOpApplied(callback: (op: NodeOperation) => void): () => void {
     this.opAppliedCallbacks.push(callback);
     return () => this.opAppliedCallbacks = this.opAppliedCallbacks.filter(l => l !== callback);
   }
 
-  static compareVertices(vertexId: string, treeA: RepTree, treeB: RepTree): boolean {
-    const childrenA = treeA.state.getChildrenIds(vertexId);
-    const childrenB = treeB.state.getChildrenIds(vertexId);
+  static compareNodes(nodeId: string, treeA: RepTree, treeB: RepTree): boolean {
+    const childrenA = treeA.state.getChildrenIds(nodeId);
+    const childrenB = treeB.state.getChildrenIds(nodeId);
 
     if (childrenA.length !== childrenB.length) {
       return false;
     }
 
-    // Compare properties of the current vertex
-    if (vertexId !== null) {
-      const propertiesA = treeA.getVertexProperties(vertexId);
-      const propertiesB = treeB.getVertexProperties(vertexId);
+    // Compare properties of the current node
+    if (nodeId !== null) {
+      const propertiesA = treeA.getNodeProperties(nodeId);
+      const propertiesB = treeB.getNodeProperties(nodeId);
 
       if (propertiesA.length !== propertiesB.length) {
         return false;
@@ -542,7 +555,7 @@ export class RepTree {
         return false;
       }
 
-      if (!RepTree.compareVertices(childId, treeA, treeB)) {
+      if (!RepTree.compareNodes(childId, treeA, treeB)) {
         return false;
       }
     }
@@ -550,47 +563,53 @@ export class RepTree {
     return true;
   }
 
-  private newVertexInternal(vertexId: string, parentId: string | null): string {
-    this.lamportClock++;
-    // To create a vertex - we move a vertex with a fresh id under the parent.
-    // No need to have a separate "create vertex" operation.
-    const op = newMoveVertexOp(this.lamportClock, this.peerId, vertexId, parentId);
+  private newNodeInternal(nodeId: string, parentId: string | null): string {
+    this.moveClock++;
+    // To create a node - we move a node with a fresh id under the parent.
+    // No need to have a separate "create node" operation.
+    const op = newMoveNodeOp(this.moveClock, this.peerId, nodeId, parentId);
     this.localOps.push(op);
     this.applyMove(op);
 
     // Set the creation date
-    this.setVertexProperty(vertexId, '_c', new Date().toISOString());
+    this.setNodeProperty(nodeId, '_c', new Date().toISOString());
 
-    return vertexId;
+    return nodeId;
   }
 
-  private newVertexInternalWithUUID(parentId: string | null): string {
-    const vertexId = uuid();
-    return this.newVertexInternal(vertexId, parentId);
+  private newNodeInternalWithUUID(parentId: string | null): string {
+    const nodeId = uuid();
+    return this.newNodeInternal(nodeId, parentId);
   }
 
-  private ensureNullVertex() {
-    const vertexId = RepTree.NULL_VERTEX_ID;
+  private ensureNullNode() {
+    const nodeId = RepTree.NULL_NODE_ID;
 
-    // Check if the null vertex already exists
-    if (this.state.getVertex(vertexId)) {
+    // Check if the null node already exists
+    if (this.state.getNode(nodeId)) {
       return;
     }
 
-    this.newVertexInternal(vertexId, null);
+    this.newNodeInternal(nodeId, null);
   }
 
   /** Updates the lamport clock with the counter value of the operation */
-  private updateLamportClock(operation: VertexOperation): void {
+  private updateMoveClock(operation: MoveNode): void {
     // This is how Lamport clock updates with a foreign operation that has a greater counter value.
-    if (operation.id.counter > this.lamportClock) {
-      this.lamportClock = operation.id.counter;
+    if (operation.id.counter > this.moveClock) {
+      this.moveClock = operation.id.counter;
+    }
+  }
+
+  private updatePropClock(operation: SetNodeProperty): void {
+    if (operation.id.counter > this.propClock) {
+      this.propClock = operation.id.counter;
     }
   }
 
   private applyPendingMovesForParent(parentId: string) {
     // If a parent doesn't exist, we can't apply pending moves yet.
-    if (!this.state.getVertex(parentId)) {
+    if (!this.state.getNode(parentId)) {
       return;
     }
 
@@ -606,18 +625,19 @@ export class RepTree {
     }
   }
 
-  private applyMove(op: MoveVertex) {
-    // Check if a parent (unless we're dealing with the root vertex) exists for the move operation.
+  private applyMove(op: MoveNode) {
+    // Check if a parent (unless we're dealing with the root node) exists for the move operation.
     // If it doesn't exist, stash the move op for later
-    if (op.parentId !== null && !this.state.getVertex(op.parentId)) {
+    if (op.parentId !== null && !this.state.getNode(op.parentId)) {
       if (!this.pendingMovesWithMissingParent.has(op.parentId)) {
         this.pendingMovesWithMissingParent.set(op.parentId, []);
       }
       this.pendingMovesWithMissingParent.get(op.parentId)!.push(op);
+      this.markOpSeen(op, true);
       return;
     }
 
-    this.updateLamportClock(op);
+    this.updateMoveClock(op);
 
     const lastOp = this.moveOps.length > 0 ? this.moveOps[this.moveOps.length - 1] : null;
 
@@ -634,7 +654,7 @@ export class RepTree {
     // The algorithm ensures that all replicas converge to the same tree after applying all operations.
     // The replicas are basically forced to apply the moves in the same order (by undo-do-redo).
     // So if a conflict or a cycle is introduced by some of the peers - the algorithm will resolve it.
-    // tryToMove function has the logic to detect cycles and will ignore the move if it creates a cycle. 
+    // tryToMove function has the logic to detect cycles and will ignore the move if it creates a cycle.
     else {
       let targetIndex = this.moveOps.length;
       for (let i = this.moveOps.length - 1; i >= 0; i--) {
@@ -660,127 +680,135 @@ export class RepTree {
     }
 
     // After applying the move, check if it unblocks any pending moves
-    // We use targetId here because this vertex might now be a parent for pending operations
+    // We use targetId here because this node might now be a parent for pending operations
     this.applyPendingMovesForParent(op.targetId);
   }
 
-  private setLLWPropertyAndItsOpId(op: SetVertexProperty) {
-    this.propertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
+  private setLLWPropertyAndItsOpId(op: SetNodeProperty) {
+    this.propertyOpsByKey.set(`${op.key}@${op.targetId}`, op);
     this.state.setProperty(op.targetId, op.key, op.value);
-    this.reportOpAsApplied(op);
+    this.reportOpAsApplied(op, false);
+    this.refreshPropStateVector();
   }
 
-  private setTransientPropertyAndItsOpId(op: SetVertexProperty) {
+  private setTransientPropertyAndItsOpId(op: SetNodeProperty) {
     this.transientPropertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
     this.state.setTransientProperty(op.targetId, op.key, op.value);
-    this.reportOpAsApplied(op);
+    this.reportOpAsApplied(op, false);
   }
 
-  private applyProperty(op: SetVertexProperty) {
-    const targetVertex = this.state.getVertex(op.targetId);
-    if (!targetVertex) {
-      // No need to handle transient properties if the vertex doesn't exist
+  private applyProperty(op: SetNodeProperty) {
+    const targetNode = this.state.getNode(op.targetId);
+    if (!targetNode) {
+      // No need to handle transient properties if the node doesn't exist
       if (op.transient) {
         return;
       }
 
-      // If the vertex doesn't exist, we will wait for the move operation to appear that will create the vertex
+      // If the node doesn't exist, we will wait for the move operation to appear that will create the node
       // so we can apply the property then.
-      if (!this.pendingPropertiesWithMissingVertex.has(op.targetId)) {
-        this.pendingPropertiesWithMissingVertex.set(op.targetId, []);
+      if (!this.pendingPropertiesWithMissingNode.has(op.targetId)) {
+        this.pendingPropertiesWithMissingNode.set(op.targetId, []);
       }
-      this.pendingPropertiesWithMissingVertex.get(op.targetId)!.push(op);
+      this.pendingPropertiesWithMissingNode.get(op.targetId)!.push(op);
+      this.markOpSeen(op, false);
       return;
     }
 
-    this.updateLamportClock(op);
+    this.updatePropClock(op);
 
-    this.applyLLWProperty(op, targetVertex);
+    this.applyLLWProperty(op, targetNode);
   }
 
-  private applyLLWProperty(op: SetVertexProperty, targetVertex: VertexState) {
+  private applyLLWProperty(op: SetNodeProperty, targetNode: NodeState) {
     const prevTransientOpId = this.transientPropertiesAndTheirOpIds.get(`${op.key}@${op.targetId}`);
-    const prevOpId = this.propertiesAndTheirOpIds.get(`${op.key}@${op.targetId}`);
+    const prevOpId = this.propertyOpsByKey.get(`${op.key}@${op.targetId}`)?.id;
 
     if (!op.transient) {
-      this.setPropertyOps.push(op);
-
       // Apply the property if it's not already applied or if the current op is newer
       // This is the last writer wins approach that ensures the same state between replicas.
       if (!prevOpId || isOpIdGreaterThan(op.id, prevOpId)) {
         this.setLLWPropertyAndItsOpId(op);
       } else {
-        // We add it to set of known ops to avoid adding them to `setPropertyOps` multiple times 
-        // if we ever receive the same op from another peer.
-        this.knownOps.add(opIdToString(op.id));
+        this.markOpSeen(op, false);
       }
 
       // Remove the transient property if the current op is greater
       if (prevTransientOpId && isOpIdGreaterThan(op.id, prevTransientOpId)) {
         this.transientPropertiesAndTheirOpIds.delete(`${op.key}@${op.targetId}`);
-        targetVertex.removeTransientProperty(op.key);
+        targetNode.removeTransientProperty(op.key);
       }
 
     } else {
       // Handle transient properties
       if (!prevTransientOpId || isOpIdGreaterThan(op.id, prevTransientOpId)) {
         this.setTransientPropertyAndItsOpId(op);
+      } else {
+        this.markOpSeen(op, false);
       }
     }
   }
 
-  private applyOperation(op: VertexOperation) {
-    if (isMoveVertexOp(op)) {
+  private applyOperation(op: NodeOperation) {
+    if (isMoveNodeOp(op)) {
       this.applyMove(op);
     } else if (isAnyPropertyOp(op)) {
       this.applyProperty(op);
     }
   }
 
-  private reportOpAsApplied(op: VertexOperation) {
-    this.knownOps.add(opIdToString(op.id));
+  private markOpSeen(op: NodeOperation, includeInStateVector: boolean) {
+    this.knownOps.add(this.getOpKey(op));
 
-    if (this._stateVectorEnabled) {
-      this.stateVector.updateFromOp(op);
+    if (includeInStateVector && this._stateVectorEnabled) {
+      if (isMoveNodeOp(op)) {
+        this.moveStateVector.updateFromOp(op);
+      } else if (isAnyPropertyOp(op)) {
+        this.propStateVector.updateFromOp(op);
+      }
     }
+  }
+
+  private reportOpAsApplied(op: NodeOperation, includeInStateVector: boolean = true) {
+    this.markOpSeen(op, includeInStateVector);
 
     for (const callback of this.opAppliedCallbacks) {
       callback(op);
     }
   }
 
-  private tryToMove(op: MoveVertex) {
-    let targetVertex = this.state.getVertex(op.targetId);
+  private tryToMove(op: MoveNode) {
+    let targetNode = this.state.getNode(op.targetId);
 
-    if (targetVertex) {
+    if (targetNode) {
       // We cache the parentId before the move operation.
       // We will use it to undo the move according to the move op algorithm.
-      this.parentIdBeforeMove.set(op.id, targetVertex.parentId);
+      this.parentIdBeforeMove.set(op.id, targetNode.parentId);
     }
 
-    // If trying to move the target vertex under itself - do nothing
+    // If trying to move the target node under itself - do nothing
     if (op.targetId === op.parentId) return;
 
-    // If we try to move the vertex (op.targetId) under one of its descendants (op.parentId) - do nothing
+    // If we try to move the node (op.targetId) under one of its descendants (op.parentId) - do nothing
     if (op.parentId && this.isAncestor(op.parentId, op.targetId)) return;
 
-    this.state.moveVertex(op.targetId, op.parentId);
+    this.state.moveNode(op.targetId, op.parentId);
 
-    // If the vertex didn't exist before the move - see if it has pending properties
+    // If the node didn't exist before the move - see if it has pending properties
     // and apply them.
-    if (!targetVertex) {
-      const pendingProperties = this.pendingPropertiesWithMissingVertex.get(op.targetId) || [];
-      this.pendingPropertiesWithMissingVertex.delete(op.targetId);
+    if (!targetNode) {
+      const pendingProperties = this.pendingPropertiesWithMissingNode.get(op.targetId) || [];
+      this.pendingPropertiesWithMissingNode.delete(op.targetId);
       for (const prop of pendingProperties) {
         this.applyProperty(prop);
       }
     }
   }
 
-  private undoMove(op: MoveVertex) {
-    const targetVertex = this.state.getVertex(op.targetId);
-    if (!targetVertex) {
-      console.error(`An attempt to undo move operation ${opIdToString(op.id)} failed because the target vertex ${op.targetId} not found`);
+  private undoMove(op: MoveNode) {
+    const targetNode = this.state.getNode(op.targetId);
+    if (!targetNode) {
+      console.error(`An attempt to undo move operation ${opIdToString(op.id)} failed because the target node ${op.targetId} not found`);
       return;
     }
 
@@ -789,62 +817,55 @@ export class RepTree {
       return;
     }
 
-    this.state.moveVertex(op.targetId, prevParentId);
+    this.state.moveNode(op.targetId, prevParentId);
   }
 
-  // --- Range-Based State Vector Methods --- 
+  // --- Range-Based State Vector Methods ---
 
   /**
-   * Returns the current state vector.
-   * Returns a readonly reference to the internal state vector.
+   * Returns the current state vectors for move and property streams.
+   * Returns readonly references to the internal state vectors.
    */
-  getStateVector(): Readonly<Record<string, number[][]>> | null {
+  getStateVectors(): { move: Readonly<StateVectors["move"]>; prop: Readonly<StateVectors["prop"]> } | null {
     if (!this._stateVectorEnabled) {
       return null;
     }
-    return this.stateVector.getState();
+    return {
+      move: this.moveStateVector.getState(),
+      prop: this.propStateVector.getState(),
+    };
   }
 
   /**
-   * Determines which operations are needed to synchronize 
+   * Determines which operations are needed to synchronize
    * with the provided state vector.
-   * 
-   * @param theirStateVector The state vector from another peer
-   * @returns Operations that should be sent to the other peer, sorted by OpId.
+   *
+   * @param theirStateVectors The state vectors from another peer
+   * @returns Operations that should be sent to the other peer, sorted by OpId within each stream.
    */
-  getMissingOps(theirStateVector: Record<string, number[][]>): VertexOperation[] {
+  getMissingOps(theirStateVectors: StateVectors): NodeOperation[] {
     // If state vector is disabled, fallback to sending all ops
     if (!this._stateVectorEnabled) {
-      return [...this.moveOps, ...this.setPropertyOps];
+      return [...this.moveOps, ...this.getPropertyOps()];
     }
 
     // Create a StateVector instance from their state vector
-    const otherStateVector = new StateVector(theirStateVector);
+    const otherMoveStateVector = new StateVector(theirStateVectors.move);
+    const otherPropStateVector = new StateVector(theirStateVectors.prop);
 
     // Get the missing ranges
-    const missingRanges = this.stateVector.diff(otherStateVector);
+    const missingMoveRanges = this.moveStateVector.diff(otherMoveStateVector);
+    const missingPropRanges = this.propStateVector.diff(otherPropStateVector);
 
     // Then, retrieve only the operations that fall within those ranges
-    const missingOps: VertexOperation[] = [];
-    // Combine moveOps and setPropertyOps for checking
-    const allOps = [...this.moveOps, ...this.setPropertyOps];
-
-    // Only check operations that might be in the missing ranges
-    for (const op of allOps) {
-      for (const range of missingRanges) {
-        if (op.id.peerId === range.peerId &&
-          op.id.counter >= range.start &&
-          op.id.counter <= range.end) {
-          missingOps.push(op);
-          break; // Move to the next op once found in a missing range
-        }
-      }
-    }
+    const missingMoveOps = this.filterOpsByRanges(this.moveOps, missingMoveRanges);
+    const missingPropOps = this.filterOpsByRanges(this.getPropertyOps(), missingPropRanges);
 
     // Sort the missing ops by OpId before returning, ensuring causal order
-    missingOps.sort((a, b) => compareOpId(a.id, b.id));
+    missingMoveOps.sort((a, b) => compareOpId(a.id, b.id));
+    missingPropOps.sort((a, b) => compareOpId(a.id, b.id));
 
-    return missingOps;
+    return [...missingMoveOps, ...missingPropOps];
   }
 
   /**
@@ -864,23 +885,57 @@ export class RepTree {
     if (value) {
       // Enable state vector and rebuild from existing operations
       this._stateVectorEnabled = true;
-      this.stateVector = StateVector.fromOperations([...this.moveOps, ...this.setPropertyOps]);
+      this.moveStateVector = StateVector.fromOperations(this.moveOps);
+      this.propStateVector = StateVector.fromOperations(this.getPropertyOps());
     } else {
       // Disable state vector and clear it to save memory
       this._stateVectorEnabled = false;
-      this.stateVector = new StateVector();
+      this.moveStateVector = new StateVector();
+      this.propStateVector = new StateVector();
     }
   }
 
   /**
-   * Parses the vertex properties with a provided schema that has a `parse` method (e.g., Zod schema)
+   * Parses the node properties with a provided schema that has a `parse` method (e.g., Zod schema)
    */
-  parseVertex<T>(vertexId: string, schema: { parse: (data: unknown) => T }): T {
-    const propsArray = this.getVertexProperties(vertexId);
+  parseNode<T>(nodeId: string, schema: { parse: (data: unknown) => T }): T {
+    const propsArray = this.getNodeProperties(nodeId);
     const propsObject: Record<string, unknown> = {};
     for (const { key, value } of propsArray) {
       propsObject[key] = value as unknown;
     }
     return schema.parse(propsObject);
+  }
+
+  private getPropertyOps(): SetNodeProperty[] {
+    return Array.from(this.propertyOpsByKey.values());
+  }
+
+  private refreshPropStateVector() {
+    if (!this._stateVectorEnabled) {
+      return;
+    }
+
+    this.propStateVector = StateVector.fromOperations(this.getPropertyOps());
+  }
+
+  private getOpKey(op: NodeOperation): string {
+    const stream = isMoveNodeOp(op) ? "move" : "prop";
+    return `${stream}:${opIdToString(op.id)}`;
+  }
+
+  private filterOpsByRanges<T extends NodeOperation>(ops: T[], ranges: { peerId: string; start: number; end: number }[]): T[] {
+    const missingOps: T[] = [];
+    for (const op of ops) {
+      for (const range of ranges) {
+        if (op.id.peerId === range.peerId &&
+          op.id.counter >= range.start &&
+          op.id.counter <= range.end) {
+          missingOps.push(op);
+          break;
+        }
+      }
+    }
+    return missingOps;
   }
 }

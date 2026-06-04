@@ -31,8 +31,8 @@ Use a compact, explicit form with an op type and a version. Example schema (v1):
   "t": "move",
   "v": 1,
   "id": { "counter": 42, "peerId": "peerA" },
-  "targetId": "vertex-123",
-  "parentId": "vertex-001" // or null
+  "targetId": "node-123",
+  "parentId": "node-001" // or null
 }
 ```
 
@@ -41,7 +41,7 @@ Use a compact, explicit form with an op type and a version. Example schema (v1):
   "t": "set",
   "v": 1,
   "id": { "counter": 43, "peerId": "peerA" },
-  "targetId": "vertex-123",
+  "targetId": "node-123",
   "key": "name",
   "hasValue": true,               // distinguishes null from deletion
   "value": "Project",            // present only when hasValue === true
@@ -79,8 +79,8 @@ Not supported (reject on ingest): `undefined` (use deletion semantics), `Date` o
 Below is a minimal example showing how to export/import ops to/from the recommended wire shapes.
 
 ```ts
-import type { VertexOperation, MoveVertex, SetVertexProperty } from 'reptree';
-import { isMoveVertexOp } from 'reptree';
+import type { NodeOperation, MoveNode, SetNodeProperty } from 'reptree';
+import { isMoveNodeOp } from 'reptree';
 
 // Wire types
 type WireOp = WireMoveOp | WireSetOp;
@@ -104,12 +104,12 @@ type WireSetOp = {
   transient: boolean;
 };
 
-export function exportOps(ops: ReadonlyArray<VertexOperation>): WireOp[] {
+export function exportOps(ops: ReadonlyArray<NodeOperation>): WireOp[] {
   return ops
     .filter(op => !("transient" in op && (op as any).transient === true))
     .map(op => {
-      if (isMoveVertexOp(op)) {
-        const m = op as MoveVertex;
+      if (isMoveNodeOp(op)) {
+        const m = op as MoveNode;
         return {
           t: 'move', v: 1,
           id: { counter: m.id.counter, peerId: m.id.peerId },
@@ -117,7 +117,7 @@ export function exportOps(ops: ReadonlyArray<VertexOperation>): WireOp[] {
           parentId: m.parentId,
         } as WireMoveOp;
       } else {
-        const s = op as SetVertexProperty;
+        const s = op as SetNodeProperty;
         const hasValue = s.value !== undefined;
         const base: WireSetOp = {
           t: 'set', v: 1,
@@ -133,14 +133,14 @@ export function exportOps(ops: ReadonlyArray<VertexOperation>): WireOp[] {
     });
 }
 
-export function importOps(wireOps: WireOp[]): VertexOperation[] {
-  return wireOps.map((w): VertexOperation => {
+export function importOps(wireOps: WireOp[]): NodeOperation[] {
+  return wireOps.map((w): NodeOperation => {
     if (w.t === 'move') {
       return {
         id: { counter: Number((w as WireMoveOp).id.counter), peerId: w.id.peerId },
         targetId: w.targetId,
         parentId: w.parentId,
-      } as MoveVertex;
+      } as MoveNode;
     }
     const s = w as WireSetOp;
     return {
@@ -149,7 +149,7 @@ export function importOps(wireOps: WireOp[]): VertexOperation[] {
       key: s.key,
       value: s.hasValue ? (s as any).value : undefined,
       transient: !!s.transient,
-    } as SetVertexProperty;
+    } as SetNodeProperty;
   });
 }
 ```

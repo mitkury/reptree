@@ -1,13 +1,13 @@
-import type { TreeVertexId, TreeVertexProperty, VertexPropertyType } from "./treeTypes";
+import type { TreeNodeId, TreeNodeProperty, NodePropertyType } from "./treeTypes";
 
-export class VertexState {
+export class NodeState {
   readonly id: string;
-  parentId: TreeVertexId | null;
-  private properties: TreeVertexProperty[];
-  private transientProperties: TreeVertexProperty[];
+  parentId: TreeNodeId | null;
+  private properties: TreeNodeProperty[];
+  private transientProperties: TreeNodeProperty[];
   children: string[];
 
-  constructor(id: string, parentId: TreeVertexId | null) {
+  constructor(id: string, parentId: TreeNodeId | null) {
     this.id = id;
     this.parentId = parentId;
     this.properties = [];
@@ -15,7 +15,7 @@ export class VertexState {
     this.children = [];
   }
 
-  setProperty(key: string, value: VertexPropertyType): void {
+  setProperty(key: string, value: NodePropertyType): void {
     const existingPropIndex = this.properties.findIndex(p => p.key === key);
     if (existingPropIndex !== -1) {
       if (value !== undefined) {
@@ -33,7 +33,7 @@ export class VertexState {
     }
   }
 
-  setTransientProperty(key: string, value: VertexPropertyType): void {
+  setTransientProperty(key: string, value: NodePropertyType): void {
     const existingPropIndex = this.transientProperties.findIndex(p => p.key === key);
     if (existingPropIndex !== -1) {
       if (value !== undefined) {
@@ -51,7 +51,7 @@ export class VertexState {
     }
   }
 
-  getProperty(key: string, includingTransient: boolean = true): VertexPropertyType | undefined {
+  getProperty(key: string, includingTransient: boolean = true): NodePropertyType | undefined {
     if (includingTransient) {
       const transientProp = this.transientProperties.find(p => p.key === key);
       if (transientProp) {
@@ -62,12 +62,12 @@ export class VertexState {
     return this.properties.find(p => p.key === key)?.value;
   }
 
-  getAllProperties(includingTransient: boolean = true): ReadonlyArray<TreeVertexProperty> {
+  getAllProperties(includingTransient: boolean = true): ReadonlyArray<TreeNodeProperty> {
     if (!includingTransient) {
       return this.properties;
     }
 
-    const result: TreeVertexProperty[] = [];
+    const result: TreeNodeProperty[] = [];
     const seenKeys = new Set<string>();
 
     // Add transient properties first
@@ -94,7 +94,7 @@ export class VertexState {
     this.transientProperties = this.transientProperties.filter(p => p.key !== key);
   }
 
-  getTransientProperties(): ReadonlyArray<TreeVertexProperty> {
+  getTransientProperties(): ReadonlyArray<TreeNodeProperty> {
     return this.transientProperties;
   }
 

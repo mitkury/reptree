@@ -8,9 +8,9 @@ RepTree uses [CRDTs](https://crdt.tech/) for seamless replication between users.
 
 ## What it solves
 
-If you have a tree structure in your app where each vertex/node/leaf can be moved independently by multiple users, you need a solution that resolves conflicts when the same vertex is moved in different ways. Otherwise your tree can diverge or form loops. This includes folder structures (people creating and moving folders), 2D/3D scenes with objects being moved and parented, and Notion‑like documents where blocks with text and other properties are edited by users.
+If you have a tree structure in your app where each node can be moved independently by multiple users, you need a solution that resolves conflicts when the same node is moved in different ways. Otherwise your tree can diverge or form loops. This includes folder structures (people creating and moving folders), 2D/3D scenes with objects being moved and parented, and Notion‑like documents where blocks with text and other properties are edited by users.
 
-You probably also want properties on each vertex/node/leaf and to have them sync correctly between peers without conflicts. RepTree syncs properties too.
+You probably also want properties on each node and to have them sync correctly between peers without conflicts. RepTree syncs properties too.
 
 ## Getting started
 
@@ -18,7 +18,7 @@ You probably also want properties on each vertex/node/leaf and to have them sync
 npm install reptree
 ```
 
-### Example 1 
+### Example 1
 ```ts
 import { RepTree } from "reptree";
 
@@ -26,11 +26,11 @@ import { RepTree } from "reptree";
 const tree = new RepTree("company-org-1");
 const company = tree.createRoot();
 
-// Create a node (we call them vertices in RepTree) in the root of our new tree
+// Create nodes in the root of our new tree
 const devs = company.newNamedChild("developers");
 const qa = company.newNamedChild("qa");
 
-// Create a vertex in another vertex
+// Create a node in another node
 const alice = qa.newChild();
 
 // Set properties (supports any JSON-serializable values)
@@ -38,10 +38,10 @@ alice.setProperty("name", "Alice");
 alice.setProperty("age", 32);
 alice.setProperty("meta", { department: "QA", skills: ["cypress", "playwright"], flags: { lead: false } });
 
-// Move the vertex inside a different vertex
+// Move the node inside a different node
 alice.moveTo(devs);
 
-// Bind a vertex to a type to set its properties like regular fields
+// Bind a node to a type to set its properties like regular fields
 const bob = qa.newChild().bind<{ name: string; age: number }>();
 bob.name = "Bob";
 bob.age = 33;
@@ -110,7 +110,7 @@ otherTree.merge(ops);
 
 RepTree uses two conflict-free replicated data types (CRDTs):
 - A move tree CRDT for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
-- A last-writer-wins (LWW) CRDT is for properties.
+- A last-writer-wins (LWW) CRDT for properties.
 
 ## License
 

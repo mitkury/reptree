@@ -1,6 +1,6 @@
 import { OpId } from "./OpId";
 import type { OpIdRange } from "./treeTypes";
-import type { VertexOperation } from "./operations";
+import type { NodeOperation } from "./operations";
 
 /**
  * Helper function to subtract one set of ranges from another.
@@ -81,7 +81,7 @@ export class StateVector {
   /**
    * Updates the state vector with a newly applied operation.
    * Assumes ranges are sorted and non-overlapping.
-   * 
+   *
    * @param peerId The peer ID of the operation
    * @param counter The counter value of the operation
    */
@@ -165,10 +165,10 @@ export class StateVector {
 
   /**
    * Updates the state vector with a newly applied operation.
-   * 
+   *
    * @param op The operation that was just applied
    */
-  updateFromOp(op: VertexOperation): void {
+  updateFromOp(op: NodeOperation): void {
     this.update(op.id.peerId, op.id.counter);
   }
 
@@ -183,7 +183,7 @@ export class StateVector {
   /**
    * Calculates which operation ranges we have that the other state vector is missing
    * by comparing state vectors.
-   * 
+   *
    * @param other The other state vector to compare against
    * @returns Array of operation ID ranges that we have but they don't
    */
@@ -216,7 +216,7 @@ export class StateVector {
 
   /**
    * Checks if the state vector contains the given operation ID
-   * 
+   *
    * @param opId The operation ID to check
    * @returns true if the operation is in the state vector, false otherwise
    */
@@ -249,11 +249,11 @@ export class StateVector {
    * @param operations The operations to build the state vector from
    * @returns A new StateVector instance
    */
-  static fromOperations(operations: ReadonlyArray<VertexOperation>): StateVector {
+  static fromOperations(operations: ReadonlyArray<NodeOperation>): StateVector {
     const stateVector = new StateVector();
     for (const op of operations) {
       stateVector.updateFromOp(op);
     }
     return stateVector;
   }
-} 
+}

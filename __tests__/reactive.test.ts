@@ -1,69 +1,69 @@
 import { describe, test, expect } from 'vitest';
-import { RepTree, bindVertex } from '../dist/index.js';
+import { RepTree, bindNode } from '../dist/index.js';
 import { z } from 'zod';
 
-describe('bindVertex reactive wrapper', () => {
+describe('bindNode reactive wrapper', () => {
   test('reflects live state and persists writes (no schema)', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const v = tree.newVertex(root.id);
+    const v = tree.newNode(root.id);
 
-    const person = bindVertex(tree, v.id);
+    const person = bindNode(tree, v.id);
 
     // write via object -> persists to CRDT
     person['name' as keyof typeof person] = 'Alice' as any;
     person['age' as keyof typeof person] = 30 as any;
 
-    expect(tree.getVertexProperty(v.id, 'name')).toBe('Alice');
-    expect(tree.getVertexProperty(v.id, 'age')).toBe(30);
+    expect(tree.getNodeProperty(v.id, 'name')).toBe('Alice');
+    expect(tree.getNodeProperty(v.id, 'age')).toBe(30);
 
     // update via CRDT -> reflected on reads (use internal key)
-    tree.setVertexProperty(v.id, 'name', 'Bob');
+    tree.setNodeProperty(v.id, 'name', 'Bob');
     expect(person['name' as keyof typeof person]).toBe('Bob');
   });
 
   test('validates writes when schema provided', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const v = tree.newVertex(root.id);
+    const v = tree.newNode(root.id);
 
     const Person = z.object({
       name: z.string(),
       age: z.number().int().min(0),
     });
 
-    const person = bindVertex(tree, v.id, Person);
+    const person = bindNode(tree, v.id, Person);
 
     person.name = 'Alice';
     person.age = 33;
 
-    expect(tree.getVertexProperty(v.id, 'name')).toBe('Alice');
-    expect(tree.getVertexProperty(v.id, 'age')).toBe(33);
+    expect(tree.getNodeProperty(v.id, 'name')).toBe('Alice');
+    expect(tree.getNodeProperty(v.id, 'age')).toBe(33);
 
     expect(() => (person.age = -1)).toThrowError();
   });
 
-  test('Vertex.bind returns reactive object (no schema)', () => {
+  test('Node.bind returns reactive object (no schema)', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const v = tree.newVertex(root.id);
+    const v = tree.newNode(root.id);
 
     const person = v.bind();
 
     person['name' as keyof typeof person] = 'Carol' as any;
     person['age' as keyof typeof person] = 28 as any;
 
-    expect(tree.getVertexProperty(v.id, 'name')).toBe('Carol');
-    expect(tree.getVertexProperty(v.id, 'age')).toBe(28);
+    expect(tree.getNodeProperty(v.id, 'name')).toBe('Carol');
+    expect(tree.getNodeProperty(v.id, 'age')).toBe(28);
 
-    tree.setVertexProperty(v.id, 'name', 'Dave');
+    tree.setNodeProperty(v.id, 'name', 'Dave');
     expect(person.name).toBe('Dave');
   });
 
-  test('Vertex.bind validates writes with schema', () => {
+  test('Node.bind validates writes with schema', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const v = tree.newVertex(root.id);
+    const v = tree.newNode(root.id);
 
     const Person = z.object({
       name: z.string(),
@@ -75,8 +75,8 @@ describe('bindVertex reactive wrapper', () => {
     person.name = 'Eve' as any;
     person.age = 41 as any;
 
-    expect(tree.getVertexProperty(v.id, 'name')).toBe('Eve');
-    expect(tree.getVertexProperty(v.id, 'age')).toBe(41);
+    expect(tree.getNodeProperty(v.id, 'name')).toBe('Eve');
+    expect(tree.getNodeProperty(v.id, 'age')).toBe(41);
 
     expect(() => (person.age = -5 as any)).toThrowError();
   });
@@ -84,7 +84,7 @@ describe('bindVertex reactive wrapper', () => {
   test('createdAt is stored at _c as ISO string; name is direct', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const v = tree.newVertex(root.id);
+    const v = tree.newNode(root.id);
 
     const Person = z.object({
       name: z.string(),
@@ -99,9 +99,9 @@ describe('bindVertex reactive wrapper', () => {
     person.age = 20 as any;
     person['_c' as any] = now.toISOString() as any;
 
-    expect(tree.getVertexProperty(v.id, 'name')).toBe('Frank');
-    expect(tree.getVertexProperty(v.id, 'age')).toBe(20);
-    expect(tree.getVertexProperty(v.id, '_c')).toBe(now.toISOString());
+    expect(tree.getNodeProperty(v.id, 'name')).toBe('Frank');
+    expect(tree.getNodeProperty(v.id, 'age')).toBe(20);
+    expect(tree.getNodeProperty(v.id, '_c')).toBe(now.toISOString());
 
     // Read public keys -> direct values
     const name = person['name' as keyof typeof person] as unknown as string;
@@ -144,7 +144,7 @@ describe('bindVertex reactive wrapper', () => {
     // 'children' can be a regular property, separate from the tree structure
     const childWithChildrenProp = root.newChild({ children: ['a', 'b'] } as any);
     expect(childWithChildrenProp.getProperty('children')).toEqual(['a', 'b']);
-    
+
     const namedChildWithChildrenProp = root.newNamedChild('X', { children: ['x', 'y'] } as any);
     expect(namedChildWithChildrenProp.getProperty('children')).toEqual(['x', 'y']);
   });
@@ -152,7 +152,7 @@ describe('bindVertex reactive wrapper', () => {
   test('whole-object validation uses direct keys', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const v = tree.newVertex(root.id);
+    const v = tree.newNode(root.id);
 
     const Person = z.object({
       name: z.string(),
@@ -169,21 +169,21 @@ describe('bindVertex reactive wrapper', () => {
     person.age = 44;
     person['_c' as any] = now.toISOString();
 
-    expect(tree.getVertexProperty(v.id, 'name')).toBe('Gina');
-    expect(tree.getVertexProperty(v.id, '_c')).toBe(now.toISOString());
+    expect(tree.getNodeProperty(v.id, 'name')).toBe('Gina');
+    expect(tree.getNodeProperty(v.id, '_c')).toBe(now.toISOString());
   });
 
   test('commitTransients promotes previous transient writes to persistent', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const v = tree.newVertex(root.id);
+    const v = tree.newNode(root.id);
 
     const Person = z.object({
       name: z.string(),
       age: z.number().int().min(0),
     });
 
-    const person = bindVertex(tree, v.id, Person);
+    const person = bindNode(tree, v.id, Person);
 
     // Transient edits first
     const when = new Date('2025-01-03T00:00:00.000Z');
@@ -200,30 +200,30 @@ describe('bindVertex reactive wrapper', () => {
     expect(createdAt).toBe(when.toISOString());
 
     // Underlying persistent values haven't been set yet (except _c which is created at creation time)
-    expect(tree.getVertexProperty(v.id, 'name', false)).toBeUndefined();
-    expect(tree.getVertexProperty(v.id, 'age', false)).toBeUndefined();
+    expect(tree.getNodeProperty(v.id, 'name', false)).toBeUndefined();
+    expect(tree.getNodeProperty(v.id, 'age', false)).toBeUndefined();
 
     // Promote transients -> persist them
     person.$commitTransients();
-    expect(tree.getVertexProperty(v.id, 'name', false)).toBe('Draft');
-    expect(tree.getVertexProperty(v.id, 'age', false)).toBe(25);
+    expect(tree.getNodeProperty(v.id, 'name', false)).toBe('Draft');
+    expect(tree.getNodeProperty(v.id, 'age', false)).toBe(25);
     // createdAt persisted as ISO
-    expect(tree.getVertexProperty(v.id, '_c', false)).toBe(when.toISOString());
+    expect(tree.getNodeProperty(v.id, '_c', false)).toBe(when.toISOString());
   });
 
   test('structural properties with $ prefix', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const parent = tree.newVertex(root.id);
-    const child1 = tree.newVertex(parent.id);
-    const child2 = tree.newVertex(parent.id);
+    const parent = tree.newNode(root.id);
+    const child1 = tree.newNode(parent.id);
+    const child2 = tree.newNode(parent.id);
 
     const Person = z.object({
       name: z.string(),
       age: z.number(),
     });
 
-    const boundParent = bindVertex(tree, parent.id, Person);
+    const boundParent = bindNode(tree, parent.id, Person);
 
     // Test $id
     expect(boundParent.$id).toBe(parent.id);
@@ -254,11 +254,11 @@ describe('bindVertex reactive wrapper', () => {
     expect(boundParent.$parentId).toBe(root.id); // unchanged
   });
 
-  test('root vertex structural properties', () => {
+  test('root node structural properties', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
 
-    const boundRoot = bindVertex(tree, root.id);
+    const boundRoot = bindNode(tree, root.id);
 
     // Root has no parent
     expect(boundRoot.$parentId).toBeNull();
@@ -272,23 +272,23 @@ describe('bindVertex reactive wrapper', () => {
   test('structural methods: $moveTo', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const parent1 = tree.newVertex(root.id);
-    const parent2 = tree.newVertex(root.id);
-    const child = tree.newVertex(parent1.id);
+    const parent1 = tree.newNode(root.id);
+    const parent2 = tree.newNode(root.id);
+    const child = tree.newNode(parent1.id);
 
-    const boundChild = bindVertex(tree, child.id);
+    const boundChild = bindNode(tree, child.id);
 
     // Initially under parent1
     expect(boundChild.$parentId).toBe(parent1.id);
 
-    // Move to parent2 using Vertex instance
+    // Move to parent2 using Node instance
     boundChild.$moveTo(parent2);
     expect(boundChild.$parentId).toBe(parent2.id);
     expect(parent2.childrenIds).toContain(child.id);
     expect(parent1.childrenIds).not.toContain(child.id);
 
-    // Move to root using bound vertex
-    const boundRoot = bindVertex(tree, root.id);
+    // Move to root using bound node
+    const boundRoot = bindNode(tree, root.id);
     boundChild.$moveTo(boundRoot);
     expect(boundChild.$parentId).toBe(root.id);
 
@@ -300,15 +300,15 @@ describe('bindVertex reactive wrapper', () => {
   test('structural methods: $delete', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const child = tree.newVertex(root.id);
+    const child = tree.newNode(root.id);
 
-    const boundChild = bindVertex(tree, child.id);
+    const boundChild = bindNode(tree, child.id);
 
-    // Delete the vertex
+    // Delete the node
     boundChild.$delete();
 
     // Verify it's deleted (moved to NULL parent, removed from original parent)
-    expect(boundChild.$parentId).toBe('0'); // NULL_VERTEX_ID
+    expect(boundChild.$parentId).toBe('0'); // NULL_NODE_ID
     expect(root.childrenIds).not.toContain(child.id);
   });
 
@@ -321,7 +321,7 @@ describe('bindVertex reactive wrapper', () => {
       age: z.number(),
     });
 
-    const boundRoot = bindVertex(tree, root.id, Person);
+    const boundRoot = bindNode(tree, root.id, Person);
 
     // Create unnamed child
     const child1 = boundRoot.$newChild({ name: 'Child1', age: 10 });
@@ -344,18 +344,18 @@ describe('bindVertex reactive wrapper', () => {
   test('structural methods: $observe', async () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const v = tree.newVertex(root.id);
+    const v = tree.newNode(root.id);
 
-    const boundVertex = bindVertex(tree, v.id);
+    const boundNode = bindNode(tree, v.id);
 
     const events: any[] = [];
-    const unobserve = boundVertex.$observe((e) => {
+    const unobserve = boundNode.$observe((e) => {
       events.push(...e);
     });
 
     // Make changes
-    boundVertex.name = 'Test' as any;
-    boundVertex.name = 'Test2' as any;
+    boundNode.name = 'Test' as any;
+    boundNode.name = 'Test2' as any;
 
     // Wait for batched events to process (~33ms)
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -373,9 +373,9 @@ describe('bindVertex reactive wrapper', () => {
   test('structural methods: $observeChildren', async () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
-    const parent = tree.newVertex(root.id);
+    const parent = tree.newNode(root.id);
 
-    const boundParent = bindVertex(tree, parent.id);
+    const boundParent = bindNode(tree, parent.id);
 
     const childrenSnapshots: any[][] = [];
     const unobserve = boundParent.$observeChildren((children) => {
@@ -383,8 +383,8 @@ describe('bindVertex reactive wrapper', () => {
     });
 
     // Add children
-    const child1 = tree.newVertex(parent.id);
-    const child2 = tree.newVertex(parent.id);
+    const child1 = tree.newNode(parent.id);
+    const child2 = tree.newNode(parent.id);
 
     // Wait for batched events to process (~33ms)
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -399,18 +399,18 @@ describe('bindVertex reactive wrapper', () => {
     unobserve();
   });
 
-  test('sync between Vertex and bound proxy', () => {
+  test('sync between Node and bound proxy', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();
 
-    // Create a child vertex normally (non-bound)
+    // Create a child node normally (non-bound)
     const v = root.newChild();
 
-    // Create two bound proxies pointing at the same vertex
-    const refA = bindVertex<{ score: number }>(tree, v.id);
-    const refB = bindVertex<{ score: number }>(tree, v.id);
+    // Create two bound proxies pointing at the same node
+    const refA = bindNode<{ score: number }>(tree, v.id);
+    const refB = bindNode<{ score: number }>(tree, v.id);
 
-    // 1) Write via Vertex API
+    // 1) Write via Node API
     v.setProperty('score', 10);
 
     // Reads via bound proxies should reflect the value
@@ -420,7 +420,7 @@ describe('bindVertex reactive wrapper', () => {
     // 2) Write via a bound proxy
     refA.score = 42;
 
-    // Vertex.getProperty should reflect the new value
+    // Node.getProperty should reflect the new value
     expect(v.getProperty('score')).toBe(42);
 
     // Other bound proxies also see the change

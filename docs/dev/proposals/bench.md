@@ -17,14 +17,14 @@ This document outlines a proposal for implementing performance benchmarking in R
 ### 1. Core Operations Performance
 
 - **Tree Structure Operations**
-  - Vertex creation (newVertex, newNamedVertex)
-  - Vertex movement (moveVertex)
-  - Vertex deletion (deleteVertex)
-  - Tree traversal (getChildren, getAncestors, getVertexByPath)
+  - Node creation (newNode, newNamedNode)
+  - Node movement (moveNode)
+  - Node deletion (deleteNode)
+  - Tree traversal (getChildren, getAncestors, getNodeByPath)
 
 - **Property Operations**
-  - Property access (getVertexProperty, getVertexProperties)
-  - Property modification (setVertexProperty, setVertexProperties)
+  - Property access (getNodeProperty, getNodeProperties)
+  - Property modification (setNodeProperty, setNodeProperties)
   - Transient property operations
 
 ### 2. Synchronization Performance
@@ -72,11 +72,11 @@ import { bench, describe } from 'vitest'
 import { RepTree } from '../src/RepTree'
 
 describe('RepTree Core Operations', () => {
-  bench('vertex creation', () => {
+  bench('node creation', () => {
     const tree = new RepTree('peer1')
     const root = tree.createRoot()
     for (let i = 0; i < 1000; i++) {
-      tree.newVertex(root.id, { name: `vertex-${i}` })
+      tree.newNode(root.id, { name: `node-${i}` })
     }
   })
 
@@ -84,11 +84,11 @@ describe('RepTree Core Operations', () => {
     // Setup tree with properties
     const tree = new RepTree('peer1')
     const root = tree.createRoot()
-    const vertex = tree.newVertex(root.id, { name: 'test-vertex' })
-    
+    const node = tree.newNode(root.id, { name: 'test-node' })
+
     // Benchmark property access
     for (let i = 0; i < 10000; i++) {
-      tree.getVertexProperty(vertex.id, 'name')
+      tree.getNodeProperty(node.id, 'name')
     }
   })
 })

@@ -1,40 +1,40 @@
-import { VertexState } from "./VertexState";
+import { NodeState } from "./NodeState";
 
-export type TreeVertexId = string;
+export type TreeNodeId = string;
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
 /** Property type for state (undefined means removal) */
-export type VertexPropertyType = JsonValue | undefined;
+export type NodePropertyType = JsonValue | undefined;
 
-export type TreeVertexProperty = {
+export type TreeNodeProperty = {
   readonly key: string;
-  readonly value: VertexPropertyType;
+  readonly value: NodePropertyType;
 }
 
-type VertexChangeEventType = 'move' | 'property' | 'children';
+type NodeChangeEventType = 'move' | 'property' | 'children';
 
-export interface VertexChangeEvent {
-  type: VertexChangeEventType;
-  vertexId: TreeVertexId;
+export interface NodeChangeEvent {
+  type: NodeChangeEventType;
+  nodeId: TreeNodeId;
 }
 
-export type VertexPropertyChangeEvent = VertexChangeEvent & {
+export type NodePropertyChangeEvent = NodeChangeEvent & {
   type: 'property';
   key: string;
-  value: VertexPropertyType | undefined;
+  value: NodePropertyType | undefined;
 }
 
-export type VertexMoveEvent = VertexChangeEvent & {
+export type NodeMoveEvent = NodeChangeEvent & {
   type: 'move';
-  oldParentId: TreeVertexId | null | undefined;
-  newParentId: TreeVertexId;
+  oldParentId: TreeNodeId | null | undefined;
+  newParentId: TreeNodeId;
 }
 
-export type VertexChildrenChangeEvent = VertexChangeEvent & {
+export type NodeChildrenChangeEvent = NodeChangeEvent & {
   type: 'children';
-  children: VertexState[];
+  children: NodeState[];
 }
 
 /**
@@ -46,3 +46,7 @@ export interface OpIdRange {
   end: number;
 }
 
+export type StateVectors = {
+  move: Record<string, number[][]>;
+  prop: Record<string, number[][]>;
+};

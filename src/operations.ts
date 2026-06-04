@@ -1,38 +1,38 @@
 import { type OpId, createOpId } from "./OpId";
-import { type VertexPropertyType } from "./treeTypes";
+import { type NodePropertyType } from "./treeTypes";
 
-export interface MoveVertex {
+export interface MoveNode {
   id: OpId;
   targetId: string;
   parentId: string | null;
 }
 
-export interface SetVertexProperty {
+export interface SetNodeProperty {
   id: OpId;
   targetId: string;
   key: string;
-  value: VertexPropertyType;
+  value: NodePropertyType;
   transient: boolean;
 }
 
-export type VertexOperation = MoveVertex | SetVertexProperty;
+export type NodeOperation = MoveNode | SetNodeProperty;
 
-export function isMoveVertexOp(op: VertexOperation): op is MoveVertex {
+export function isMoveNodeOp(op: NodeOperation): op is MoveNode {
   return 'parentId' in op;
 }
 
-export function isAnyPropertyOp(op: VertexOperation): op is SetVertexProperty {
+export function isAnyPropertyOp(op: NodeOperation): op is SetNodeProperty {
   return 'key' in op;
 }
 
-export function newMoveVertexOp(clock: number, peerId: string, targetId: string, parentId: string | null): MoveVertex {
+export function newMoveNodeOp(clock: number, peerId: string, targetId: string, parentId: string | null): MoveNode {
   return { id: createOpId(clock, peerId), targetId, parentId };
 }
 
-export function newSetVertexPropertyOp(clock: number, peerId: string, targetId: string, key: string, value: VertexPropertyType): SetVertexProperty {
+export function newSetNodePropertyOp(clock: number, peerId: string, targetId: string, key: string, value: NodePropertyType): SetNodeProperty {
   return { id: createOpId(clock, peerId), targetId, key, value, transient: false };
 }
 
-export function newSetTransientVertexPropertyOp(clock: number, peerId: string, targetId: string, key: string, value: VertexPropertyType): SetVertexProperty {
+export function newSetTransientNodePropertyOp(clock: number, peerId: string, targetId: string, key: string, value: NodePropertyType): SetNodeProperty {
   return { id: createOpId(clock, peerId), targetId, key, value, transient: true };
 }

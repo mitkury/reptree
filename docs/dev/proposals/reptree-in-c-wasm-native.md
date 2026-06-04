@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make RepTree handle **millions of vertices** and **years of ops** while running:
+Make RepTree handle **millions of nodes** and **years of ops** while running:
 
 - in the browser (via **WebAssembly**, ideally inside a Worker)
 - on mobile/desktop/server (via **native C**: shared library, static lib, etc.)
@@ -12,7 +12,7 @@ This proposal focuses on a **C “core engine”** that is storage-aware, memory
 Related proposals:
 - `docs/dev/proposals/big-trees/big-trees.md` (page data off-heap / into stores)
 - `docs/dev/proposals/big-trees/reptree-in-rust.md` (thin JS API + native core)
-- `docs/dev/proposals/reptree-vertices-with-lots-of-children.md` (large child lists)
+- `docs/dev/proposals/reptree-nodes-with-lots-of-children.md` (large child lists)
 - `docs/dev/proposals/async-move-ops-background-fetching.md` (streaming ops in the background)
 - `docs/dev/proposals/ids-optimization.md` (ID interning)
 - `docs/dev/proposals/indexing.md` (local secondary indexes)
@@ -45,10 +45,10 @@ Tradeoffs:
 Move RepTree’s heavy state into a native core with:
 
 - **append-only op logs** (move ops + prop ops)
-- a **materialized snapshot** (vertex rows + property rows) that can be rebuilt/folded
+- a **materialized snapshot** (node rows + property rows) that can be rebuilt/folded
 - **paged access** for hot queries (children pages, property pages)
 - **compact IDs** (interned strings → 32-bit/64-bit IDs)
-- a **thin JS facade** that keeps only a small LRU cache of “hot” vertices and exposes reactive binding
+- a **thin JS facade** that keeps only a small LRU cache of “hot” nodes and exposes reactive binding
 
 This aligns with the “Big-Data Spec” but makes the “stores” a first-class part of the engine, with C-level formats that are efficient across native and WASM.
 
@@ -90,7 +90,7 @@ Native (non-browser) uses the same C core via an FFI boundary:
 All repeated strings become interned numeric IDs inside the engine:
 
 - `peer_id` → `peer_u32`
-- `vertex_id` (UUID string) → `vid_u64` (or `vid_u128` if truly needed)
+- `node_id` (UUID string) → `vid_u64` (or `vid_u128` if truly needed)
 - property keys (strings) → `key_u32`
 
 The engine maintains string tables:
@@ -107,14 +107,14 @@ Benefits:
 
 We separate:
 
-- **snapshot tables** (current view): vertex rows, property rows, child adjacency
+- **snapshot tables** (current view): node rows, property rows, child adjacency
 - **op logs**: move ops + property ops (append-only)
 
 The public API can still expose “get all ops” for sync, but the *engine* stops relying on “keep all ops in JS arrays”.
 
 ### 3) Children: page-based adjacency, not JS arrays
 
-For vertices with huge child lists, “children as a JS array” becomes a liability.
+For nodes with huge child lists, “children as a JS array” becomes a liability.
 
 Core representation becomes paged:
 
@@ -141,7 +141,7 @@ The C core should not require a particular backend. Instead it depends on a smal
 
 - **MoveLogStore**: append + scan by range (by peer and/or global sequence)
 - **PropLogStore**: append + scan by range
-- **SnapshotStore**: point reads/writes of vertex + property state, and child pages
+- **SnapshotStore**: point reads/writes of node + property state, and child pages
 - (optional) **IndexStore**: secondary index tables
 
 ### Minimal C “vtable” sketch
@@ -160,9 +160,9 @@ typedef struct rt_store_vtbl {
                    int (*on_item)(void* uctx, const uint8_t* bytes, size_t len),
                    void* uctx);
 
-  // Snapshot (vertex + props + children pages)
-  int (*vertex_get)(void* ctx, uint64_t vid, uint8_t** out, size_t* out_len);
-  int (*vertex_put)(void* ctx, const uint8_t* bytes, size_t len);
+  // Snapshot (node + props + children pages)
+  int (*node_get)(void* ctx, uint64_t vid, uint8_t** out, size_t* out_len);
+  int (*node_put)(void* ctx, const uint8_t* bytes, size_t len);
   int (*children_page_get)(void* ctx, uint64_t parent_vid,
                            const uint8_t* cursor, size_t cursor_len,
                            uint32_t limit,
@@ -209,7 +209,7 @@ Important: For “huge trees”, objects/arrays can be big; the proposal should 
 
 ### Snapshot rows
 
-Vertex snapshot row:
+Node snapshot row:
 - `vid`, `parent_vid`, `tombstone`, plus child-index root pointer (if persisted)
 
 Property snapshot row:
@@ -257,7 +257,7 @@ Sync semantics remain “ops are the source of truth across peers”; pruning is
 
 ### Core queries (must be fast)
 
-- `get_vertex(vid)` (point lookup)
+- `get_node(vid)` (point lookup)
 - `get_children_page(parent_vid, cursor, limit)`
 - `get_props(vid)` or `get_prop(vid, key)`
 - `get_missing_ops(state_vector)` (sync)
@@ -280,7 +280,7 @@ For v1 in C, keep it simple:
 
 The TS layer keeps the current ergonomics:
 
-- `Vertex` objects (or proxies) remain the main UX surface
+- `Node` objects (or proxies) remain the main UX surface
 - `bind()` remains (reactive proxy backed by cached reads + patches)
 - `observe()` remains (subscription-based, batched)
 
@@ -288,8 +288,8 @@ The TS layer keeps the current ergonomics:
 
 For huge trees, we likely need **new optional APIs**, while keeping existing ones:
 
-- `vertex.children` (current) may remain for small lists, but should be discouraged for huge lists
-- add `vertex.childrenPage({ cursor, limit })` and/or `vertex.childrenIterator()`
+- `node.children` (current) may remain for small lists, but should be discouraged for huge lists
+- add `node.childrenPage({ cursor, limit })` and/or `node.childrenIterator()`
 - add `tree.prefetchChildren(parent, opts)` to warm caches
 
 We can keep backward compatibility by:
@@ -309,7 +309,7 @@ Example (conceptual):
 
 - `rt_create(peer_string, store_vtbl, store_ctx) -> rt_handle*`
 - `rt_apply_op(handle, op_bytes, op_len, out_patch_bytes*)`
-- `rt_get_vertex(handle, vid, out_bytes*)`
+- `rt_get_node(handle, vid, out_bytes*)`
 - `rt_get_children_page(handle, parent_vid, cursor_bytes, cursor_len, limit, out_bytes*)`
 - `rt_get_state_vector(handle, out_bytes*)`
 - `rt_get_missing_ops(handle, their_state_vector_bytes, out_ops_bytes*)`
@@ -371,7 +371,7 @@ Memory ownership rule:
 
 ## Open questions
 
-- **Vertex IDs**: keep UUID strings externally but map internally to `vid_u64` (hash) vs store full UUID as 16 bytes.
+- **Node IDs**: keep UUID strings externally but map internally to `vid_u64` (hash) vs store full UUID as 16 bytes.
 - **Child ordering key**: reuse current move-tree ordering logic vs adopt a position-key scheme (e.g., fractional indexing / order-statistics tree).
 - **Property values**: strict JSON only vs allow opaque blobs (CBOR) as a first-class value type.
 - **Threading**: native background fold threads vs explicit “tick” calls for determinism.
