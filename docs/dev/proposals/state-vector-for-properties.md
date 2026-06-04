@@ -56,14 +56,14 @@ The current implementation already does this correctly:
 getMissingOps(theirStateVectors: StateVectors): VertexOperation[] {
   // Move ops: existing range-based logic
   const missingMoveOps = /* ... existing logic ... */;
-  
+
   // Property ops: filter compacted ops by missing ranges
   const missingPropRanges = this.propStateVector.diff(otherPropStateVector);
   const missingPropOps = this.filterOpsByRanges(
     this.getPropertyOps(),  // Already returns only latest per key
     missingPropRanges
   );
-  
+
   return [...missingMoveOps, ...missingPropOps];
 }
 
@@ -86,7 +86,7 @@ When receiver applies property ops, LWW semantics handle duplicates:
 ```ts
 private applyLLWProperty(op: SetVertexProperty, targetVertex: VertexState) {
   const prevOpId = this.propertyOpsByKey.get(`${op.key}@${op.targetId}`)?.id;
-  
+
   // Only apply if this op is newer (or first time)
   if (!prevOpId || isOpIdGreaterThan(op.id, prevOpId)) {
     this.setLLWPropertyAndItsOpId(op);
