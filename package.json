@@ -18,7 +18,6 @@
     "README.md"
   ],
   "scripts": {
-    "prepare": "npx airul gen",
     "prebuild": "rm -rf dist",
     "build": "tsup",
     "dev": "tsup --watch",
@@ -43,7 +42,6 @@
     "url": "https://github.com/mitkury/reptree/issues"
   },
   "devDependencies": {
-    "airul": "^0.1.39",
     "ts-node": "^10.9.1",
     "tsup": "^8.0.1",
     "typescript": "^5.2.2",

@@ -8,9 +8,9 @@ RepTree uses [CRDTs](https://crdt.tech/) for seamless replication between users.
 
 ## What it solves
 
-If you have a tree structure in your app where each node/node/leaf can be moved independently by multiple users, you need a solution that resolves conflicts when the same node is moved in different ways. Otherwise your tree can diverge or form loops. This includes folder structures (people creating and moving folders), 2D/3D scenes with objects being moved and parented, and Notion‑like documents where blocks with text and other properties are edited by users.
+If you have a tree structure in your app where each node can be moved independently by multiple users, you need a solution that resolves conflicts when the same node is moved in different ways. Otherwise your tree can diverge or form loops. This includes folder structures (people creating and moving folders), 2D/3D scenes with objects being moved and parented, and Notion‑like documents where blocks with text and other properties are edited by users.
 
-You probably also want properties on each node/node/leaf and to have them sync correctly between peers without conflicts. RepTree syncs properties too.
+You probably also want properties on each node and to have them sync correctly between peers without conflicts. RepTree syncs properties too.
 
 ## Getting started
 
@@ -26,7 +26,7 @@ import { RepTree } from "reptree";
 const tree = new RepTree("company-org-1");
 const company = tree.createRoot();
 
-// Create a node (we call them nodes in RepTree) in the root of our new tree
+// Create nodes in the root of our new tree
 const devs = company.newNamedChild("developers");
 const qa = company.newNamedChild("qa");
 
@@ -110,7 +110,7 @@ otherTree.merge(ops);
 
 RepTree uses two conflict-free replicated data types (CRDTs):
 - A move tree CRDT for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
-- A last-writer-wins (LWW) CRDT is for properties.
+- A last-writer-wins (LWW) CRDT for properties.
 
 ## License
 
