@@ -399,6 +399,28 @@ describe('bindNode reactive wrapper', () => {
     unobserve();
   });
 
+  test('parent children events include the full child list on child property updates', async () => {
+    const tree = new RepTree('peer1');
+    const root = tree.createRoot();
+    const parent = tree.newNode(root.id);
+    const child1 = tree.newNode(parent.id);
+    const child2 = tree.newNode(parent.id);
+
+    const childrenEvents: any[] = [];
+    const unobserve = tree.observe(parent.id, events => {
+      childrenEvents.push(...events.filter(event => event.type === 'children'));
+    });
+
+    child1.setProperty('name', 'First');
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const finalEvent = childrenEvents[childrenEvents.length - 1];
+    expect(finalEvent.children.map((child: any) => child.id)).toEqual([child1.id, child2.id]);
+
+    unobserve();
+  });
+
   test('sync between Node and bound proxy', () => {
     const tree = new RepTree('peer1');
     const root = tree.createRoot();

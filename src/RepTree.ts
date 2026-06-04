@@ -78,6 +78,10 @@ export class RepTree {
     }
   }
 
+  dispose(): void {
+    this.state.dispose();
+  }
+
   get root(): Node | undefined {
     // In case if the root was created from the ops (not explicitly), then we need to find it in the state.
     if (!this.rootNodeId) {
@@ -281,28 +285,6 @@ export class RepTree {
   }
 
   setNodeProperty(nodeId: string, key: string, value: NodePropertyType) {
-    // Runtime validation for JSON-serializable values (undefined is allowed for deletion)
-    const isJsonValue = (v: any): boolean => {
-      if (v === undefined) return true; // deletion signal
-      if (v === null) return true;
-      const t = typeof v;
-      if (t === 'string' || t === 'number' || t === 'boolean') return true;
-      if (t === 'bigint' || t === 'function' || t === 'symbol') return false;
-      if (Array.isArray(v)) return v.every(isJsonValue);
-      if (t === 'object') {
-        if (v instanceof Date) return false; // disallow Date objects
-        if (v instanceof Map || v instanceof Set || v instanceof RegExp) return false;
-        if (ArrayBuffer.isView(v)) return false; // TypedArrays
-        const proto = Object.getPrototypeOf(v);
-        if (proto !== Object.prototype && proto !== null) return false;
-        for (const val of Object.values(v)) {
-          if (!isJsonValue(val)) return false;
-        }
-        return true;
-      }
-      return false;
-    };
-
     if (!isJsonValue(value)) {
       throw new Error(`Unsupported property value for key "${key}"`);
     }
@@ -325,19 +307,16 @@ export class RepTree {
     path = path.replace(/^\/+/, '');
     path = path.replace(/\/+$/, '');
 
-    const pathParts = path.split('/');
-
-    if (!this.rootNodeId) {
+    const root = this.root;
+    if (!root) {
       return undefined;
     }
 
-    const root = this.state.getNode(this.rootNodeId);
-    if (!root) {
-      throw new Error('The root node is not found');
+    if (path === '') {
+      return root;
     }
 
-    const node = this.getNodeByPathArray(new Node(this, root), pathParts);
-    return node;
+    return this.getNodeByPathArray(root, path.split('/'));
   }
 
   private getNodeByPathArray(node: Node, path: string[]): Node | undefined {

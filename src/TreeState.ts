@@ -2,23 +2,36 @@ import type { TreeNodeId, NodeChangeEvent, NodePropertyChangeEvent, NodeChildren
 import { NodeState } from "./NodeState";
 
 export class TreeState {
+  private static BATCH_DELAY_MS = 33.3;
+
   private nodes: Map<TreeNodeId, NodeState>;
   private changeCallbacks: Map<TreeNodeId, Set<(events: NodeChangeEvent[]) => void>> = new Map();
   private globalChangeCallbacks: Set<(events: NodeChangeEvent[]) => void> = new Set();
 
-  private batchTickInterval: NodeJS.Timeout;
+  private batchTickTimeout: ReturnType<typeof setTimeout> | undefined;
   private batchedEvents: Map<TreeNodeId, NodeChangeEvent[]> = new Map();
 
   constructor() {
     this.nodes = new Map();
-
-    this.batchTickInterval = setInterval(() => {
-      this.processBatchedEvents();
-    }, 33.3);
   }
 
   dispose() {
-    clearInterval(this.batchTickInterval);
+    if (this.batchTickTimeout) {
+      clearTimeout(this.batchTickTimeout);
+      this.batchTickTimeout = undefined;
+    }
+    this.batchedEvents.clear();
+  }
+
+  private scheduleBatchProcessing() {
+    if (this.batchTickTimeout) {
+      return;
+    }
+
+    this.batchTickTimeout = setTimeout(() => {
+      this.batchTickTimeout = undefined;
+      this.processBatchedEvents();
+    }, TreeState.BATCH_DELAY_MS);
   }
 
   private processBatchedEvents() {
@@ -68,18 +81,15 @@ export class TreeState {
 
   getChildren(nodeId: TreeNodeId): NodeState[] {
     return this.getChildrenIds(nodeId)
-      .map(id => {
-        const node = this.nodes.get(id);
-        return node ? node : undefined;
-      })
-      .filter(node => node !== undefined)
+      .map(id => this.nodes.get(id))
+      .filter((node): node is NodeState => node !== undefined)
       .sort((a, b) => {
         const aDate = a.getProperty('_c') as string;
         const bDate = b.getProperty('_c') as string;
         if (!aDate) return -1;
         if (!bDate) return 1;
         return new Date(aDate).getTime() - new Date(bDate).getTime();
-      }) as NodeState[];
+      });
   }
 
   moveNode(nodeId: TreeNodeId, newParentId: TreeNodeId | null): NodeState {
@@ -168,7 +178,7 @@ export class TreeState {
       this.notifyChange({
         type: 'children',
         nodeId: node.parentId,
-        children: [node], // @TODO: shoulld I set all children or rename this property?
+        children: this.getChildren(node.parentId),
       } as NodeChildrenChangeEvent);
     }
   }
@@ -215,6 +225,7 @@ export class TreeState {
     }
 
     events.push(event);
+    this.scheduleBatchProcessing();
 
     // @TODO: have immediate events
     //this.globalChangeCallbacks.forEach(listener => listener(event));

@@ -35,4 +35,27 @@ describe("Basic ops structure", () => {
     expect(propOps2.length).toBe(propOps.length + 1);
     expect(propOps2[propOps2.length - 1].id.counter).toBe(lastPropCounterBefore + 1);
   });
+
+  test("getNodeByPath returns the root for empty and slash paths", () => {
+    const tree = new RepTree("peer1");
+    const root = tree.createRoot();
+    const docs = root.newNamedChild("Docs");
+    const readme = docs.newNamedChild("README.md");
+
+    expect(tree.getNodeByPath("")?.id).toBe(root.id);
+    expect(tree.getNodeByPath("/")?.id).toBe(root.id);
+    expect(tree.getNodeByPath("/Docs/README.md/")?.id).toBe(readme.id);
+    expect(tree.getNodeByPath("/Missing")).toBeUndefined();
+  });
+
+  test("getNodeByPath works after merging ops before reading root", () => {
+    const source = new RepTree("peer1");
+    const root = source.createRoot();
+    const docs = root.newNamedChild("Docs");
+
+    const target = new RepTree("peer2");
+    target.merge(source.getAllOps());
+
+    expect(target.getNodeByPath("/Docs")?.id).toBe(docs.id);
+  });
 });
