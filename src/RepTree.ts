@@ -431,9 +431,25 @@ export class RepTree {
     return true;
   }
 
-  /** Checks if the given `ancestorId` is an ancestor of `childId` in the tree */
+  /** Checks whether moving `targetId` under `parentId` would create a cycle. */
+  wouldMoveCreateCycle(move: Pick<MoveNode, 'targetId' | 'parentId'>): boolean {
+    if (move.targetId === move.parentId) return true;
+    if (move.parentId === null) return false;
+
+    return this.hasAncestor(move.parentId, move.targetId);
+  }
+
+  /**
+   * Checks if the given `ancestorId` is an ancestor of `childId` in the tree.
+   *
+   * @deprecated Use `wouldMoveCreateCycle` for move validation.
+   */
   isAncestor(childId: string, ancestorId: string | null): boolean {
-    let targetId = childId;
+    return this.hasAncestor(childId, ancestorId);
+  }
+
+  private hasAncestor(nodeId: string, ancestorId: string | null): boolean {
+    let targetId = nodeId;
     let node: NodeState | undefined;
 
     // Set to track visited nodes and detect cycles
@@ -445,9 +461,8 @@ export class RepTree {
 
       // If we've already visited this node, we have a cycle
       if (visitedNodes.has(targetId)) {
-        console.error(`isAncestor: cycle detected in the tree structure.`);
-        // In the context of tryToMove, we should return false here to prevent the move
-        // since the target ancestor isn't actually in the path (we're in a cycle)
+        console.error(`hasAncestor: cycle detected in the tree structure.`);
+        // The requested ancestor was not found before the cycle repeated.
         return false;
       }
 
@@ -765,11 +780,7 @@ export class RepTree {
       this.parentIdBeforeMove.set(op.id, targetNode.parentId);
     }
 
-    // If trying to move the target node under itself - do nothing
-    if (op.targetId === op.parentId) return;
-
-    // If we try to move the node (op.targetId) under one of its descendants (op.parentId) - do nothing
-    if (op.parentId && this.isAncestor(op.parentId, op.targetId)) return;
+    if (this.wouldMoveCreateCycle(op)) return;
 
     this.state.moveNode(op.targetId, op.parentId);
 

@@ -58,4 +58,26 @@ describe("Basic ops structure", () => {
 
     expect(target.getNodeByPath("/Docs")?.id).toBe(docs.id);
   });
+
+  test("wouldMoveCreateCycle explains invalid move checks", () => {
+    const tree = new RepTree("peer1");
+    const root = tree.createRoot();
+    const docs = root.newNamedChild("Docs");
+    const readme = docs.newNamedChild("README.md");
+
+    expect(tree.wouldMoveCreateCycle({ targetId: docs.id, parentId: docs.id })).toBe(true);
+    expect(tree.wouldMoveCreateCycle({ targetId: docs.id, parentId: readme.id })).toBe(true);
+    expect(tree.wouldMoveCreateCycle({ targetId: readme.id, parentId: root.id })).toBe(false);
+    expect(tree.wouldMoveCreateCycle({ targetId: docs.id, parentId: null })).toBe(false);
+  });
+
+  test("isAncestor keeps its existing argument order for compatibility", () => {
+    const tree = new RepTree("peer1");
+    const root = tree.createRoot();
+    const docs = root.newNamedChild("Docs");
+    const readme = docs.newNamedChild("README.md");
+
+    expect(tree.isAncestor(readme.id, docs.id)).toBe(true);
+    expect(tree.isAncestor(docs.id, readme.id)).toBe(false);
+  });
 });
