@@ -1,182 +1,177 @@
-# Proposal: Bulk Apply Should Rebuild State Vectors Once
+# Property State Vectors Are Incremental
+
+## Status
+
+Implemented.
 
 ## Summary
 
-RepTree should treat constructor replication and `merge(ops)` as bulk operation application. During bulk apply, RepTree should apply all operations first, then rebuild state vectors once at the end.
+RepTree should maintain `propStateVector` as an incremental cache of retained compacted property ops.
 
-This keeps normal live edits incremental, but avoids rebuilding the property state vector thousands of times while loading a saved tree.
+The property state vector does not track every property op ever seen. It tracks the property ops that remain sendable after LWW compaction by `(nodeId, key)`.
+
+The invariant is:
+
+```ts
+propStateVector == StateVector.fromOperations(getPropertyOps())
+```
+
+RepTree should preserve that invariant without rebuilding the whole property vector during normal property application.
 
 ## Use Case
 
-SIE stores editor spaces as RepTree operation logs. A large imported semantic layer currently has:
+A saved object graph can contain hundreds of nodes and thousands of property ops.
 
-- 6,720 ops
-- 601 materialized editor nodes
-- about 1.5 MB of JSONL operation storage
-- many property ops because each semantic object has transform, bounds, render, and metadata components
+Before this change, replaying that log was slow because RepTree rebuilt the entire property state vector after many winning property ops.
 
-Opening that space used `new RepTree(peerId, ops)` in the editor and API.
-
-The slow path was not JSON parsing, rendering, or tree traversal. It was RepTree replay:
-
-- local benchmark with constructor path: roughly 4-8 seconds
-- same ops with state vectors disabled during replay and rebuilt once: roughly 45-60 ms
-- browser after workaround: heavy space load path around 80-100 ms, viewport sync around 8-10 ms
-
-SIE worked around this by doing:
+Application code worked around this by doing:
 
 ```ts
-const tree = new RepTree(peerId, []);
-tree.popLocalOps();
 tree.stateVectorEnabled = false;
 tree.merge(ops);
 tree.stateVectorEnabled = true;
 ```
 
-That should not be application code. It is a RepTree bulk-load behavior.
+That should not be application code.
 
-## Current Problem
+## Problem
 
-RepTree stores compacted property ops in `propertyOpsByKey`, keyed by `(nodeId, key)`.
+`knownOps` and `propStateVector` are different things:
 
-When a persistent property op wins LWW, `setLLWPropertyAndItsOpId` calls `refreshPropStateVector()`.
+- `knownOps` tracks ops this replica has accepted or discarded, so duplicate processing can be skipped.
+- `propStateVector` tracks retained compacted property ops this replica can send to another peer.
 
-`refreshPropStateVector()` rebuilds the entire property state vector:
+For a new `(nodeId, key)`, the winning property op can simply be added to the vector.
 
-```ts
-this.propStateVector = StateVector.fromOperations(this.getPropertyOps());
-```
+For a replacement on an existing `(nodeId, key)`, the previous retained op must be removed from the vector and the new op added.
 
-That is fine for single live edits. It is bad during bulk replay.
+Rebuilding from every retained property op is correct but too expensive for replacement-heavy edits.
 
-For a log with many property ops, this becomes repeated full rebuilds:
+## Behavior
 
-```text
-apply property op 1 -> rebuild vector from all compacted property ops
-apply property op 2 -> rebuild vector from all compacted property ops
-apply property op 3 -> rebuild vector from all compacted property ops
-...
-```
+Maintain the property state vector according to the compacted property op set:
 
-The work scales like repeated `O(compactedPropertyOps)` rebuilds during import. Loading a saved tree should not have that cost.
+- if a winning persistent property op is the first retained op for `(nodeId, key)`, call `propStateVector.updateFromOp(op)`
+- if a winning persistent property op replaces an older retained op for `(nodeId, key)`, call `propStateVector.removeFromOp(previousOp)` and then `propStateVector.updateFromOp(op)`
+- if a property op loses LWW, mark it seen but do not include it in `propStateVector`
+- transient properties still do not affect `propStateVector`
+- callbacks should observe coherent state vectors for the op being reported
 
-## Desired Behavior
+The final tree state and sync behavior should remain identical to the compacted property sync model.
 
-RepTree should support two modes:
+## API
 
-1. Incremental apply for local edits and small live sync batches.
-2. Bulk apply for constructor replication, saved-log loading, and large remote merges.
+No public RepTree API change.
 
-In bulk apply:
-
-- move ops are applied as they are today
-- property ops still use LWW and pending-node behavior
-- known ops are still recorded
-- op-applied callbacks still fire unless a future API explicitly suppresses them
-- state vectors are not rebuilt after each property op
-- state vectors are rebuilt once after all operations are applied
-
-The final tree state and sync behavior should be identical to the current implementation.
-
-## Proposed API
-
-Keep the default API simple:
+Users should keep using:
 
 ```ts
 const tree = new RepTree(peerId, ops);
 tree.merge(opsFromPeer);
 ```
 
-These should automatically use bulk state-vector maintenance when applying more than one operation, or at least when applying more than a small threshold.
+## Implementation
 
-If explicit control is useful, add one public method:
+`StateVector` has point deletion:
 
 ```ts
-tree.applyBulk(ops);
+remove(peerId: string, counter: number): boolean;
+removeFromOp(op: NodeOperation): boolean;
 ```
 
-But the constructor path should still use the bulk behavior internally. Users should not need to know about state-vector internals to load a saved tree quickly.
-
-## Implementation Direction
-
-Add an internal helper:
+RepTree passes the previous retained property op through LWW application:
 
 ```ts
-private applyOpsBulk(ops: ReadonlyArray<NodeOperation>) {
-  const wasEnabled = this._stateVectorEnabled;
-  if (wasEnabled) {
-    this._stateVectorEnabled = false;
-  }
+const previousOp = this.propertyOpsByKey.get(`${op.key}@${op.targetId}`);
 
-  try {
-    this.applyOps(ops);
-  } finally {
-    if (wasEnabled) {
-      this._stateVectorEnabled = true;
-      this.moveStateVector = StateVector.fromOperations(this.moveOps);
-      this.propStateVector = StateVector.fromOperations(this.getPropertyOps());
-    }
-  }
+if (!previousOp || isOpIdGreaterThan(op.id, previousOp.id)) {
+  this.setLLWPropertyAndItsOpId(op, previousOp);
+} else {
+  this.markOpSeen(op);
 }
 ```
 
-Then use it from:
+Record the vector update before firing `observeOpApplied` callbacks:
 
-- constructor when `ops.length > 0`
-- `merge(ops)` when `ops.length > 1` or above a threshold
-- any future import/snapshot restore path
+```ts
+private setLLWPropertyAndItsOpId(op: SetNodeProperty, previousOp: SetNodeProperty | undefined) {
+  this.propertyOpsByKey.set(`${op.key}@${op.targetId}`, op);
+  this.state.setProperty(op.targetId, op.key, op.value);
+  this.recordRetainedPropertyOpInStateVector(op, previousOp);
+  this.reportPropertyOpAsApplied(op);
+}
 
-This keeps the existing `stateVectorEnabled` public property, but application code no longer has to toggle it for normal bulk loading.
+private recordRetainedPropertyOpInStateVector(
+  op: SetNodeProperty,
+  previousOp: SetNodeProperty | undefined,
+) {
+  if (!this._stateVectorEnabled) {
+    return;
+  }
+
+  if (previousOp) {
+    this.propStateVector.removeFromOp(previousOp);
+  }
+  this.propStateVector.updateFromOp(op);
+}
+```
+
+## Move Vector Invariant
+
+Move vectors should not advertise move ops that `getMissingOps()` cannot return.
+
+A move with a missing parent is known for duplicate suppression, but it is not in `moveOps` yet. Until it is in `moveOps`, it should not be included in `moveStateVector`.
+
+This keeps the sync contract simple:
+
+```text
+state vector range -> getMissingOps can return the advertised ops
+```
 
 ## Edge Cases
 
-### Existing State Vector Disabled
+### New Property Key
 
-If `stateVectorEnabled` is already false before bulk apply, leave it false and do not rebuild at the end.
+Only call `updateFromOp(op)`.
 
-### Exceptions During Apply
+### Replacing a Retained Property Op
 
-Use `try/finally` so the enabled flag is restored. If rebuilding after a partial failed apply is risky, the first version can restrict bulk apply to constructor and normal `merge` paths that already assume valid ops.
+Remove the previous retained op ID, then add the new op ID.
 
-### Op-Applied Callbacks
+### Losing Property Ops
 
-Keep callback behavior unchanged in the first version. The optimization should only change when state vectors rebuild, not which events fire.
+Mark the op as seen for duplicate suppression, but do not add it to `propStateVector`.
 
-### Missing Parents and Pending Properties
+### Missing Nodes and Pending Properties
 
-Do not bypass current pending move/property logic. Bulk apply should still call the same move and property application methods. The change is only state-vector maintenance timing.
+Do not bypass current pending property logic. When a pending property finally applies, use the same retained-op update rule.
 
-### Compacted Property Ops
+### Missing Parents and Move Ops
 
-Rebuilding `propStateVector` from `getPropertyOps()` preserves the current compacted property sync model documented in `state-vector-for-node-properties.md`.
+Do not include a pending missing-parent move in `moveStateVector` until the move is in `moveOps` and therefore sendable.
 
 ## Tests
 
-Add tests that compare current semantic behavior, not implementation details:
+Tests assert the sync contract:
 
-1. Constructor from ops produces the same structure and properties as incremental apply.
-2. `merge(largeOps)` produces the same `getStateVectors()` as applying the same ops one by one.
-3. LWW property compaction still works after bulk apply.
-4. Duplicate ops remain ignored.
-5. Pending properties before node creation still apply when the move op arrives.
+1. Constructor replay with many new property keys does not call `StateVector.fromOperations`.
+2. Constructor replay with a replacement property op also does not call `StateVector.fromOperations`.
+3. Replacement property vectors send the retained op through `getMissingOps()`.
+4. `observeOpApplied` callbacks see state vectors that already contain the reported move/property op.
+5. A pending missing-parent move is not advertised until it is sendable.
+6. `StateVector.remove()` deletes, shrinks, and splits ranges correctly.
 
-Add one benchmark:
+Benchmarks cover both shapes:
 
 ```text
 load tree with hundreds of nodes and thousands of property ops
+load one node with one hot property and thousands of replacements
 ```
 
-The benchmark should include constructor and `merge`.
+The benchmarks compare constructor loading, property-heavy `merge`, and the old application workaround.
 
 ## Recommendation
 
-Make bulk state-vector maintenance part of RepTree itself.
+Keep property state-vector maintenance fully incremental.
 
-The current public workaround is too leaky. If a user passes a saved operation log to the constructor or calls `merge` with a large batch, RepTree has enough context to know it is replaying a batch. It should avoid repeated state-vector rebuilds and produce the same final state with one rebuild at the end.
-
-The smallest useful first step:
-
-1. Add internal `applyOpsBulk`.
-2. Use it in the constructor.
-3. Add a regression benchmark for the SIE-shaped operation log.
-4. If clean, route large `merge` batches through it too.
+The old public workaround was too leaky, and a special bulk mode is more machinery than this needs. The direct fix is to keep the state vector equal to the retained property op set with update and point deletion.

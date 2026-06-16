@@ -1,7 +1,14 @@
 # Proposal: Separate Operation Streams and Lamport Clocks
 
+## Status
+
+Partially implemented.
+
+RepTree now has separate move and property clocks and state vectors. Property ops are compacted by `(nodeId, key)`, and the property state vector tracks retained compacted property ops, not full seen property history.
+
 ## Summary
-RepTree currently treats all operations as a single sequence with a single Lamport counter per peer. This proposal suggests splitting operations into distinct streams—at minimum **move operations** and **property operations**—with separate Lamport clocks and state vectors. Property operations are last-writer-wins (LWW), so we can retain only the latest op per `(nodeId, key)` and avoid carrying full property histories. This separation improves storage efficiency and sync performance while preserving correctness.
+
+RepTree should keep move operations and property operations as distinct streams with separate Lamport clocks and state vectors. Property operations are last-writer-wins (LWW), so RepTree can retain only the latest op per `(nodeId, key)` and avoid carrying full property histories.
 
 ## Goals
 - Separate **move** and **property** operations into distinct log streams.
@@ -15,10 +22,12 @@ RepTree currently treats all operations as a single sequence with a single Lampo
 - Changing property conflict resolution (still LWW).
 - Introducing server-side compaction logic (can be a follow-up).
 
-## Current State (High-Level)
-- A single Lamport counter per peer is used across all ops.
-- A single state vector tracks applied operations.
-- Property ops are stored and synced alongside move ops.
+## Current State
+
+- RepTree has separate move and property clocks.
+- RepTree has separate move and property state vectors.
+- Move ops are retained in `moveOps`.
+- Property ops are compacted in `propertyOpsByKey`.
 - State vector comparisons decide which ops to send.
 
 ## Proposed Design
@@ -36,8 +45,10 @@ Each stream has:
 Future extension: add streams for other CRDTs (e.g., text, presence) without impacting existing streams.
 
 ### 2. Property ops are LWW and can be compacted
+
 Property operations are LWW by `(nodeId, key)`:
-- The **latest op** (by `(counter, peerId)` tiebreak) fully represents the state for that key.
+
+- The latest op by `(counter, peerId)` tiebreak fully represents the state for that key.
 - Historical property ops are not required for correctness and can be discarded.
 
 #### Proposed storage shape
@@ -47,12 +58,12 @@ Property operations are LWW by `(nodeId, key)`:
 #### Compaction
 - On insert, compare against current latest by LWW order.
 - Store only the winning op.
-- Optionally record last-seen counter per peer for state vectors.
+- Maintain `propStateVector` from retained winning ops, not from every seen property op.
 
 ### 3. Separate replication flows
 Replication exchanges **two state vectors**:
-1. Move state vector → send missing move ops.
-2. Property state vector → send missing property ops (but only latest per key).
+1. Move state vector: send missing move ops.
+2. Property state vector: send missing property ops, but only latest per key.
 
 #### Property sync optimization
 Instead of shipping all property ops:
@@ -72,22 +83,22 @@ Apply in the following order for deterministic results:
 ## API/Schema Implications
 
 ### State vectors
-- Replace single `stateVector` with `stateVectors: { move, prop }`.
-- `getStateVector()` becomes `getStateVectors()` or a versioned payload.
+- Use `stateVectors: { move, prop }`.
+- Use `getStateVectors()`.
 
 ### Ops serialization
-- `op.type` should identify stream (`move` or `prop`).
-- Ops are stored/sent with `stream` field to select the correct state vector.
+- Existing op shape identifies the stream structurally.
+- A future wire format can add an explicit `stream` field if needed.
 
 ### Internal changes
-- Introduce `MoveClock` and `PropClock` (per peer).
-- Dedicated `MoveStateVector` and `PropStateVector`.
-- Property store switches from op log to **latest-op per key** storage.
+- Keep dedicated move and property clocks.
+- Keep dedicated move and property state vectors.
+- Store properties as latest-op per key.
 
 ## Migration Strategy
-- If persisted logs exist, we can replay existing operations into the new model:
-  - Move ops → move log/state vector.
-  - Property ops → compact into `propLatest` while updating prop state vector.
+
+If persisted logs exist, replay existing operations into the current model. Move ops go into the move log and move state vector. Property ops compact into latest-op storage and retained-dot state vector.
+
 - For compatibility, a version flag in serialized snapshots can indicate stream separation.
 
 ## Implications
@@ -99,9 +110,10 @@ Apply in the following order for deterministic results:
 - **Scalability**: reduces total op volume in long-lived sessions.
 
 ### Trade-offs / Risks
-- **Complexity**: multiple clocks/state vectors to manage.
-- **Protocol changes**: peers need to understand stream separation.
-- **Edge cases**: property ops arriving before a node exists (requires buffering or applying after move ops).
+
+- Complexity: multiple clocks/state vectors to manage.
+- Protocol changes: peers need to understand stream separation.
+- Edge cases: property ops arriving before a node exists require buffering or applying after move ops.
 
 ### Correctness Considerations
 - LWW requires deterministic tie-breaking: `(counter, peerId)` within **property stream**.
@@ -119,13 +131,12 @@ Apply in the following order for deterministic results:
   - Sync ordering and correctness when ops interleave.
 
 ## Open Questions
-- Do we want separate counters per **node** for properties (optional optimization)?
-- Should property state vector track **latest counter per peer** only, even if we compact ops?
-- How to represent property deletes (e.g., tombstone op vs explicit unset)?
+
+- Do we want separate counters per node for properties?
+- How should property deletes be represented: tombstone op or explicit unset?
+
+Resolved: property state vectors must not track only latest counter per peer. They track retained compacted property dots, including holes created by evicted older writes.
 
 ## Recommendation
-Proceed with a phased implementation:
-1. Introduce stream-aware op schema and dual state vectors.
-2. Split clocks and logging per stream.
-3. Implement property compaction to retain only latest per key.
-4. Add migration/compat layer or version bump for existing consumers.
+
+Keep the current split-stream model. Future work should focus on explicit wire-versioning and property delete semantics, not on changing property vectors to latest-counter-per-peer.

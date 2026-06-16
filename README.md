@@ -1,116 +1,131 @@
-# RepTree - replicated trees with properties
+# RepTree
 
-A JavaScript tree data structure for storing and syncing app state. It can be used both to represent and persist the state in the frontend and backend.
+RepTree is a small TypeScript library for replicated trees with properties.
 
-RepTree uses [CRDTs](https://crdt.tech/) for seamless replication between users.
+Use it when your application state is naturally a tree and multiple peers may edit it: folders, documents with nested blocks, scene graphs, project structures, object graphs, or any UI model where nodes can move and carry properties.
 
-> RepTree was created for the [Sila](https://github.com/silaorg/sila) project, an open-source alternative to ChatGPT.
+RepTree is built on CRDTs, so peers can exchange operations in any order and converge on the same state without a central merge coordinator.
 
-## What it solves
-
-If you have a tree structure in your app where each node can be moved independently by multiple users, you need a solution that resolves conflicts when the same node is moved in different ways. Otherwise your tree can diverge or form loops. This includes folder structures (people creating and moving folders), 2D/3D scenes with objects being moved and parented, and Notion‑like documents where blocks with text and other properties are edited by users.
-
-You probably also want properties on each node and to have them sync correctly between peers without conflicts. RepTree syncs properties too.
-
-## Getting started
+## Install
 
 ```bash
 npm install reptree
 ```
 
-### Example 1
+## What RepTree Gives You
+
+- Tree nodes that can be created, moved, deleted, and observed.
+- JSON-serializable properties on every node.
+- Last-writer-wins property conflict resolution.
+- Move conflict resolution based on the move operation tree CRDT.
+- Operation-based sync for persistence or peer replication.
+- State vectors for efficient delta sync.
+- Optional typed/reactive node bindings.
+
+## Basic Usage
+
 ```ts
 import { RepTree } from "reptree";
 
-// Create a tree with a root
-const tree = new RepTree("company-org-1");
-const company = tree.createRoot();
-
-// Create nodes in the root of our new tree
-const devs = company.newNamedChild("developers");
-const qa = company.newNamedChild("qa");
-
-// Create a node in another node
-const alice = qa.newChild();
-
-// Set properties (supports any JSON-serializable values)
-alice.setProperty("name", "Alice");
-alice.setProperty("age", 32);
-alice.setProperty("meta", { department: "QA", skills: ["cypress", "playwright"], flags: { lead: false } });
-
-// Move the node inside a different node
-alice.moveTo(devs);
-
-// Bind a node to a type to set its properties like regular fields
-const bob = qa.newChild().bind<{ name: string; age: number }>();
-bob.name = "Bob";
-bob.age = 33;
-
-// Use a Zod type for runtime type checks
-import { z } from "zod";
-const Person = z.object({ name: z.string(), age: z.number().int().min(0) });
-const casey = devs.newNamedChild("Casey").bind(Person);
-casey.name = "Casey";
-casey.age = 34;
-```
-
-### Example 2
-
-```typescript
-import { RepTree } from "reptree";
-
-// Create a new tree
-const tree = new RepTree("peer1");
+const tree = new RepTree("peer-a");
 const root = tree.createRoot();
 root.name = "Project";
 
-// Create a folder structure with properties
-const docsFolder = root.newNamedChild("Docs");
-docsFolder.setProperties({
+const docs = root.newNamedChild("Docs", {
   type: "folder",
-  icon: "folder-icon",
+  icon: "folder",
 });
 
-const imagesFolder = root.newNamedChild("Images");
-imagesFolder.setProperties({
-  type: "folder",
-  icon: "image-icon",
-});
-
-// Add files to folders
-const readmeFile = docsFolder.newNamedChild("README.md");
-readmeFile.setProperties({
+const readme = docs.newNamedChild("README.md", {
   type: "file",
   size: 2048,
-  lastModified: "2023-10-15T14:22:10Z",
-  s3Path: "s3://my-bucket/docs/README.md",
+  tags: ["docs", "intro"],
 });
 
-const logoFile = imagesFolder.newNamedChild("logo.png");
-logoFile.setProperties({
-  type: "file",
-  size: 15360,
-  meta: { dimensions: "512x512", format: "png" },
-  s3Path: "s3://my-bucket/images/logo.png",
-});
+const assets = root.newNamedChild("Assets", { type: "folder" });
+readme.moveTo(assets);
 
-// Move a file to a different folder
-logoFile.moveTo(docsFolder);
-
-// Get children of a folder
-const docsFolderContents = docsFolder.children;
-
-// Syncing between trees
-const otherTree = new RepTree("peer2");
-const ops = tree.getAllOps();
-otherTree.merge(ops);
+console.log(readme.parent?.name); // "Assets"
+console.log(readme.getProperty("size")); // 2048
 ```
 
-## CRDTs
+## Sync
 
-RepTree uses two conflict-free replicated data types (CRDTs):
-- A move tree CRDT for the tree structure (https://martin.kleppmann.com/papers/move-op.pdf).
-- A last-writer-wins (LWW) CRDT for properties.
+RepTree syncs by exchanging operations. Store operations, send them over the network, and merge operations received from other peers.
+
+```ts
+import { RepTree } from "reptree";
+
+const alice = new RepTree("alice");
+const aliceRoot = alice.createRoot();
+aliceRoot.newNamedChild("Roadmap", { status: "draft" });
+
+const bob = new RepTree("bob");
+bob.merge(alice.getAllOps());
+
+bob.root!.newNamedChild("Notes", { status: "open" });
+alice.merge(bob.getAllOps());
+```
+
+For larger trees, use state vectors to send only operations the other peer is missing:
+
+```ts
+const aliceVectors = alice.getStateVectors();
+
+if (aliceVectors) {
+  const opsForAlice = bob.getMissingOps(aliceVectors);
+  alice.merge(opsForAlice);
+}
+```
+
+Property operations are compacted by `(nodeId, key)`: RepTree keeps the latest winning property operation for each property and uses the property state vector to describe that retained, sendable set. Move operations keep their history so the move CRDT can resolve structural conflicts.
+
+## Typed Nodes
+
+You can bind a node to a live typed object. Reads and writes go through RepTree.
+
+```ts
+type Task = {
+  title: string;
+  done: boolean;
+};
+
+const task = root.newNamedChild("Task").bind<Task>();
+task.title = "Write README";
+task.done = false;
+
+task.$observe(() => {
+  console.log(task.title, task.done);
+});
+```
+
+Zod-style schemas are supported for runtime validation:
+
+```ts
+import { z } from "zod";
+
+const TaskSchema = z.object({
+  title: z.string(),
+  done: z.boolean(),
+});
+
+const checkedTask = root.newNamedChild("Checked task").bind(TaskSchema);
+checkedTask.title = "Publish package";
+checkedTask.done = true;
+```
+
+## Operation Model
+
+RepTree uses two conflict-free replicated data types:
+
+- A move tree CRDT for the tree structure, based on Kleppmann's [move operation paper](https://martin.kleppmann.com/papers/move-op.pdf).
+- A last-writer-wins (LWW) CRDT for node properties.
+
+Both streams have independent counters and state vectors. This keeps property-heavy workloads compact while preserving the move history needed for deterministic tree convergence.
+
+## Origin
+
+RepTree was created for [Sila](https://github.com/silaorg/sila), an open-source alternative to ChatGPT.
 
 ## License
 

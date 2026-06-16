@@ -345,14 +345,6 @@ export class RepTree {
   }
 
   merge(ops: ReadonlyArray<NodeOperation>) {
-    /*
-    if (ops.length > 100) {
-      this.applyOpsOptimizedForLotsOfMoves(ops);
-    } else {
-      this.applyOps(ops);
-    }
-    */
-
     this.applyOps(ops);
   }
 
@@ -376,29 +368,6 @@ export class RepTree {
       }
 
       this.applyOperation(op);
-    }
-  }
-
-  /** Applies operations in an optimized way, sorting move ops by OpId to avoid undo-do-redo cycles */
-  private applyOpsOptimizedForLotsOfMoves(ops: ReadonlyArray<NodeOperation>) {
-    const newMoveOps = ops.filter(op => isMoveNodeOp(op) && !this.knownOps.has(this.getOpKey(op)));
-    if (newMoveOps.length > 0) {
-      // Get an array of all move ops (without already applied ones)
-      const allMoveOps = [...this.moveOps, ...newMoveOps] as MoveNode[];
-      // The main point of this optimization is to apply the moves without undo-do-redo cycles (the conflict resolution algorithm).
-      // That is why we sort by OpId.
-      allMoveOps.sort((a, b) => compareOpId(a.id, b.id));
-      for (let i = 0, len = allMoveOps.length; i < len; i++) {
-        const op = allMoveOps[i];
-        this.applyMove(op);
-      }
-    }
-
-    // Get an array of all property ops (without already applied ones)
-    const propertyOps = ops.filter(op => isAnyPropertyOp(op) && !this.knownOps.has(this.getOpKey(op)));
-    for (let i = 0, len = propertyOps.length; i < len; i++) {
-      const op = propertyOps[i];
-      this.applyProperty(op as SetNodeProperty);
     }
   }
 
@@ -627,7 +596,7 @@ export class RepTree {
         this.pendingMovesWithMissingParent.set(op.parentId, []);
       }
       this.pendingMovesWithMissingParent.get(op.parentId)!.push(op);
-      this.markOpSeen(op, true);
+      this.markOpSeen(op);
       return;
     }
 
@@ -638,7 +607,7 @@ export class RepTree {
     // If it's the most recent move operation - just try to move it. No conflict resolution is needed.
     if (lastOp === null || isOpIdGreaterThan(op.id, lastOp.id)) {
       this.moveOps.push(op);
-      this.reportOpAsApplied(op);
+      this.reportMoveOpAsApplied(op);
       this.tryToMove(op);
     }
 
@@ -664,7 +633,7 @@ export class RepTree {
 
       // Insert the op at the correct position
       this.moveOps.splice(targetIndex + 1, 0, op);
-      this.reportOpAsApplied(op);
+      this.reportMoveOpAsApplied(op);
       this.tryToMove(op);
 
       // Redo all of the operations after the operation that we applied
@@ -678,17 +647,17 @@ export class RepTree {
     this.applyPendingMovesForParent(op.targetId);
   }
 
-  private setLLWPropertyAndItsOpId(op: SetNodeProperty) {
-    this.propertyOpsByKey.set(`${op.key}@${op.targetId}`, op);
+  private setLLWPropertyAndItsOpId(op: SetNodeProperty, previousOp: SetNodeProperty | undefined) {
+    this.propertyOpsByKey.set(this.getPropertyKey(op), op);
     this.state.setProperty(op.targetId, op.key, op.value);
-    this.reportOpAsApplied(op, false);
-    this.refreshPropStateVector();
+    this.recordRetainedPropertyOpInStateVector(op, previousOp);
+    this.reportPropertyOpAsApplied(op);
   }
 
   private setTransientPropertyAndItsOpId(op: SetNodeProperty) {
-    this.transientPropertiesAndTheirOpIds.set(`${op.key}@${op.targetId}`, op.id);
+    this.transientPropertiesAndTheirOpIds.set(this.getPropertyKey(op), op.id);
     this.state.setTransientProperty(op.targetId, op.key, op.value);
-    this.reportOpAsApplied(op, false);
+    this.reportPropertyOpAsApplied(op);
   }
 
   private applyProperty(op: SetNodeProperty) {
@@ -705,7 +674,7 @@ export class RepTree {
         this.pendingPropertiesWithMissingNode.set(op.targetId, []);
       }
       this.pendingPropertiesWithMissingNode.get(op.targetId)!.push(op);
-      this.markOpSeen(op, false);
+      this.markOpSeen(op);
       return;
     }
 
@@ -715,21 +684,22 @@ export class RepTree {
   }
 
   private applyLLWProperty(op: SetNodeProperty, targetNode: NodeState) {
-    const prevTransientOpId = this.transientPropertiesAndTheirOpIds.get(`${op.key}@${op.targetId}`);
-    const prevOpId = this.propertyOpsByKey.get(`${op.key}@${op.targetId}`)?.id;
+    const propertyKey = this.getPropertyKey(op);
+    const prevTransientOpId = this.transientPropertiesAndTheirOpIds.get(propertyKey);
+    const previousOp = this.propertyOpsByKey.get(propertyKey);
 
     if (!op.transient) {
       // Apply the property if it's not already applied or if the current op is newer
       // This is the last writer wins approach that ensures the same state between replicas.
-      if (!prevOpId || isOpIdGreaterThan(op.id, prevOpId)) {
-        this.setLLWPropertyAndItsOpId(op);
+      if (!previousOp || isOpIdGreaterThan(op.id, previousOp.id)) {
+        this.setLLWPropertyAndItsOpId(op, previousOp);
       } else {
-        this.markOpSeen(op, false);
+        this.markOpSeen(op);
       }
 
       // Remove the transient property if the current op is greater
       if (prevTransientOpId && isOpIdGreaterThan(op.id, prevTransientOpId)) {
-        this.transientPropertiesAndTheirOpIds.delete(`${op.key}@${op.targetId}`);
+        this.transientPropertiesAndTheirOpIds.delete(propertyKey);
         targetNode.removeTransientProperty(op.key);
       }
 
@@ -738,7 +708,7 @@ export class RepTree {
       if (!prevTransientOpId || isOpIdGreaterThan(op.id, prevTransientOpId)) {
         this.setTransientPropertyAndItsOpId(op);
       } else {
-        this.markOpSeen(op, false);
+        this.markOpSeen(op);
       }
     }
   }
@@ -751,21 +721,26 @@ export class RepTree {
     }
   }
 
-  private markOpSeen(op: NodeOperation, includeInStateVector: boolean) {
+  private markOpSeen(op: NodeOperation) {
     this.knownOps.add(this.getOpKey(op));
-
-    if (includeInStateVector && this._stateVectorEnabled) {
-      if (isMoveNodeOp(op)) {
-        this.moveStateVector.updateFromOp(op);
-      } else if (isAnyPropertyOp(op)) {
-        this.propStateVector.updateFromOp(op);
-      }
-    }
   }
 
-  private reportOpAsApplied(op: NodeOperation, includeInStateVector: boolean = true) {
-    this.markOpSeen(op, includeInStateVector);
+  private reportMoveOpAsApplied(op: MoveNode) {
+    this.markOpSeen(op);
 
+    if (this._stateVectorEnabled) {
+      this.moveStateVector.updateFromOp(op);
+    }
+
+    this.reportOpAsApplied(op);
+  }
+
+  private reportPropertyOpAsApplied(op: SetNodeProperty) {
+    this.markOpSeen(op);
+    this.reportOpAsApplied(op);
+  }
+
+  private reportOpAsApplied(op: NodeOperation) {
     for (const callback of this.opAppliedCallbacks) {
       callback(op);
     }
@@ -814,7 +789,7 @@ export class RepTree {
 
   /**
    * Returns the current state vectors for move and property streams.
-   * Returns readonly references to the internal state vectors.
+   * Returns copies of the internal state vectors.
    */
   getStateVectors(): { move: Readonly<StateVectors["move"]>; prop: Readonly<StateVectors["prop"]> } | null {
     if (!this._stateVectorEnabled) {
@@ -901,17 +876,24 @@ export class RepTree {
     return Array.from(this.propertyOpsByKey.values());
   }
 
-  private refreshPropStateVector() {
+  private recordRetainedPropertyOpInStateVector(op: SetNodeProperty, previousOp: SetNodeProperty | undefined) {
     if (!this._stateVectorEnabled) {
       return;
     }
 
-    this.propStateVector = StateVector.fromOperations(this.getPropertyOps());
+    if (previousOp) {
+      this.propStateVector.removeFromOp(previousOp);
+    }
+    this.propStateVector.updateFromOp(op);
   }
 
   private getOpKey(op: NodeOperation): string {
     const stream = isMoveNodeOp(op) ? "move" : "prop";
     return `${stream}:${opIdToString(op.id)}`;
+  }
+
+  private getPropertyKey(op: SetNodeProperty): PropertyKeyAtNodeId {
+    return `${op.key}@${op.targetId}`;
   }
 
   private filterOpsByRanges<T extends NodeOperation>(ops: T[], ranges: { peerId: string; start: number; end: number }[]): T[] {
