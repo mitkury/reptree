@@ -101,10 +101,35 @@ Handling compression in a distributed environment:
 
 ### 4. Local pruning without full snapshots
 
-Even without a full snapshot rollout, replicas can safely prune history in-place when combined with barriers:
-- For LWW properties per `(nodeId, key)`, keep only the latest Set op and drop older ones
-- For Yjs modify ops on the same key, coalesce the sequence into a single Set op containing the full encoded Yjs state, then drop prior modifies
-- This requires barriers so no peer requests pre-barrier counters that were pruned
+Even without a full snapshot rollout, replicas can safely prune some history in place.
+
+For plain LWW properties, keep only the latest Set op per `(nodeId, key)` and drop older ones. This does not require a full compression barrier just to avoid resending evicted property writes. The property state vector describes retained compacted property ops, not full seen history.
+
+A compressed peer that has only retained property ops can advertise those retained dots directly:
+
+```text
+op 1: root.name = "first"
+op 2: root.kind = "folder"
+op 3: root.name = "second"
+retained property dots: 2, 3
+```
+
+Its property state vector can be:
+
+```json
+{
+  "remote-prop": [[2, 3]]
+}
+```
+
+A peer with a full historical property log must not send op `1` in response, because op `1` is not relevant to the compressed LWW property state. `getMissingOps()` should always send property ops from the retained property register set, not from full property history.
+
+Compression barriers are still useful for:
+
+- full snapshots
+- move history pruning
+- bounding duplicate metadata
+- Yjs-style coalescing, where a sequence is replaced by a single encoded state
 
 ### 5. Subtree compression
 
@@ -190,7 +215,8 @@ class RepTree {
 
 ### Notes on implementation details
 
-- Use `stateVector.contains(op.id)` for deduplication when state vectors are enabled; avoid unbounded `knownOps` sets post-compression
+- For plain LWW properties, sync from retained property registers and their retained-dot state vector.
+- Do not use `stateVector.contains(op.id)` as a blanket replacement for `knownOps`. Property vectors intentionally do not contain evicted older property ops.
 - Build `baseStateVector` for snapshots by filtering local ranges to counters strictly greater than the chosen barriers
 - Yjs properties are reconstructed by creating a new `Y.Doc` and applying the encoded update; subsequent local updates keep producing ops via existing observers
 

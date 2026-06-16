@@ -173,11 +173,70 @@ export class StateVector {
   }
 
   /**
+   * Removes a single operation ID from the state vector.
+   * Assumes ranges are sorted and non-overlapping.
+   *
+   * @param peerId The peer ID of the operation
+   * @param counter The counter value of the operation
+   * @returns true if a counter was removed, false if it was absent
+   */
+  remove(peerId: string, counter: number): boolean {
+    const ranges = this.ranges[peerId];
+    if (!ranges) {
+      return false;
+    }
+
+    for (let i = 0; i < ranges.length; i++) {
+      const range = ranges[i];
+      const [start, end] = range;
+
+      if (counter < start) {
+        return false;
+      }
+
+      if (counter > end) {
+        continue;
+      }
+
+      if (start === end) {
+        ranges.splice(i, 1);
+      } else if (counter === start) {
+        range[0] = start + 1;
+      } else if (counter === end) {
+        range[1] = end - 1;
+      } else {
+        ranges.splice(i, 1, [start, counter - 1], [counter + 1, end]);
+      }
+
+      if (ranges.length === 0) {
+        delete this.ranges[peerId];
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Removes the operation ID from the state vector.
+   *
+   * @param op The operation to remove
+   * @returns true if the operation ID was removed, false if it was absent
+   */
+  removeFromOp(op: NodeOperation): boolean {
+    return this.remove(op.id.peerId, op.id.counter);
+  }
+
+  /**
    * Returns the current state vector.
-   * Returns a readonly reference to the internal state.
+   * Returns a deep copy so callers cannot mutate internal state.
    */
   getState(): Readonly<Record<string, number[][]>> {
-    return this.ranges;
+    const state: Record<string, number[][]> = {};
+    for (const [peerId, peerRanges] of Object.entries(this.ranges)) {
+      state[peerId] = peerRanges.map(range => [...range]);
+    }
+    return state;
   }
 
   /**
@@ -189,11 +248,10 @@ export class StateVector {
    */
   diff(other: StateVector): OpIdRange[] {
     const missingRanges: OpIdRange[] = [];
-    const theirState = other.getState();
 
     // Check what we have that they don't have
     for (const [peerId, ourRanges] of Object.entries(this.ranges)) {
-      const theirRanges = theirState[peerId] || [];
+      const theirRanges = other.ranges[peerId] || [];
 
       // Calculate ranges we have that they don't
       const missing = subtractRanges(ourRanges, theirRanges);
